@@ -1,0 +1,18 @@
+[project]
+name = "pysolfc-tui"
+version = "0.1.0"
+description = "Terminal-native solitaire (Klondike, FreeCell, Spider, …) — Textual UI, rules inspired by PySolFC"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.80,<10",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["pysolfc_tui"]
+
+[tool.setuptools.package-data]
+pysolfc_tui = ["tui.tcss"]
