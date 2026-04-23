@@ -1,32 +1,25 @@
 # pysolfc-tui
+One deck. Eleven games. Infinite patience.
 
-Terminal-native solitaire — Textual UI, rules inspired by [PySolFC].
+![Hero](screenshots/hero.svg)
+![Gameplay](screenshots/gameplay.svg)
 
-Ships 11 variants today:
+## About
+Eleven solitaires in one tape. Klondike (turn-1 and turn-3), FreeCell, Spider, Yukon, Golf, Simple Simon, Spiderette and more. Unicode cards, mouse + keyboard, unlimited undo, clean win detection. The patience-game vault, distilled to a single terminal binary.
 
-- **Klondike** (draw-1, draw-3)
-- **FreeCell** (4-cell, 8-cell relaxed)
-- **Spider** (1-suit, 2-suit, 4-suit)
-- **Spiderette** (1-deck Spider)
-- **Simple Simon**
-- **Yukon**
-- **Golf**
+## Screenshots
+![Hero](screenshots/hero.svg)
+![Gameplay](screenshots/gameplay.svg)
 
-Cards render as 5×4 bordered glyphs with Unicode suit pips. Dark-felt
-palette, alternate-colour selection highlight, mouse + keyboard both work.
-
-## Quickstart
-
+## Install & Run
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
-.venv/bin/python pysol.py                     # Klondike
-.venv/bin/python pysol.py -v FreeCell
-.venv/bin/python pysol.py -v 'Spider (2-suit)' --seed 42
+git clone https://github.com/akakabrian/pysolfc-tui
+cd pysolfc-tui
+make
+make run
 ```
 
 ## Controls
-
 | Key | Action |
 |-----|--------|
 | `←` `→` | cursor prev/next stack |
@@ -42,35 +35,16 @@ python3 -m venv .venv
 | `q` | quit |
 | mouse click | select that card (+ any legal stack above) / drop |
 
-## Architecture
-
-- `pysolfc_tui/engine.py` — pure-Python rule core. Class names mirror
-  PySolFC (`AC_RowStack`, `SS_FoundationStack`, `WasteTalonStack`, …) so
-  the vendored upstream `engine/` tree stays cross-referenceable.
-- `pysolfc_tui/render.py` — card → (text, Rich style) glyph rows.
-- `pysolfc_tui/app.py` — Textual app. `TableauView` extends `ScrollView`
-  and paints via `render_line`.
-- `pysolfc_tui/screens.py` — Help, VariantPicker, Win modals.
-- `tests/qa.py` — 19-scenario QA harness (`python -m tests.qa`).
-- `tests/perf.py` — hot-path benchmarks.
-- `engine/` — vendored PySolFC source (gitignored, used as rules
-  reference). Clone from
-  <https://github.com/shlomif/PySolFC> into `engine/` yourself.
-
-See [`DECISIONS.md`](DECISIONS.md) for the rationale behind the
-clean-room rewrite (TL;DR: PySolFC's `Game` class is Tk-canvas coupled
-end-to-end, so a shim would be the bulk of the project anyway).
-
-## Running tests
-
+## Testing
 ```bash
-.venv/bin/python -m tests.qa            # all
-.venv/bin/python -m tests.qa cursor     # scenarios matching "cursor"
-.venv/bin/python -m tests.perf          # baseline benchmarks
+make test       # QA harness
+make playtest   # scripted critical-path run
+make perf       # performance baseline
 ```
 
-All 19 scenarios pass on Textual 0.80+.
-
 ## License
+GPL-3.0
 
-GPLv3 (matches PySolFC).
+## Built with
+- [Textual](https://textual.textualize.io/) — the TUI framework
+- [tui-game-build](https://github.com/akakabrian/tui-foundry) — shared build process

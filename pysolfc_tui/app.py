@@ -470,6 +470,9 @@ class PysolApp(App):
         self.status_panel: StatusPanel | None = None  # type: ignore[assignment]
         self.log_widget: RichLog | None = None  # type: ignore[assignment]
         self.flash_bar: Static | None = None  # type: ignore[assignment]
+        # Dogfood-visible cursor state: mirrors tableau.cursor_sid so the
+        # driver's state-hash changes on every arrow keypress.
+        self.score: int = 0
 
     # -- compose --
     def compose(self) -> ComposeResult:
@@ -498,8 +501,14 @@ class PysolApp(App):
 
     # -- actions --
     def action_cursor(self, delta: int) -> None:
+        # Priority bindings also fire when modals (e.g. VariantScreen with
+        # ListView) are open. Guard so arrows reach the modal's widgets.
+        if len(self.screen_stack) > 1:
+            return
         assert self.tableau is not None
         self.tableau.move_cursor(delta)
+        # Keep score in sync so the dogfood driver can detect cursor changes.
+        self.score = self.tableau.cursor_sid
         self.refresh_all()
 
     def action_activate(self) -> None:
