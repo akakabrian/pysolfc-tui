@@ -38,13 +38,15 @@ _HELP_TEXT = """\
                      Same stack = deselect.
 
 [b yellow]Variants supported[/b yellow]
-  Klondike       Turn 1 from stock; A→K suit on foundations.
-  FreeCell       All face-up; 4 cells + 4 foundations.
-  Spider (2s.)   Build K→A same-suit runs; 10 columns, 2 decks.
-  Yukon          Klondike without stock; all rows face-up.
-  Freecell-1     Like FreeCell but 1 cell (harder).
-  Easthaven      Spider-ish but 7 rows, deal-one to all.
-  Golf           Tableau → one waste; rank-adjacent only.
+  Klondike            Turn 1 from stock; A→K suit on foundations.
+  Klondike (turn 3)   Klondike with draw-3 from stock.
+  FreeCell            All face-up; 4 cells + 4 foundations.
+  FreeCell (8 cells)  Easy FreeCell warm-up.
+  Spider (1/2/4-suit) Build K→A same-suit runs; 10 cols, 2 decks.
+  Spiderette          1-deck Spider, 7 columns.
+  Simple Simon        10-col Spider-style, 1 deck, no stock.
+  Yukon               Klondike without stock; all rows face-up.
+  Golf                Tableau → one waste; rank-adjacent only.
 
 [dim]Press any key to close.[/dim]
 """

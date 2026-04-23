@@ -17,8 +17,8 @@ detection, and (optionally) auto-send to foundations.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, Sequence, TypeVar
 
 
 # ---------- constants ----------
@@ -73,6 +73,9 @@ def make_deck(num_decks: int = 1, suits: Sequence[int] = SUITS) -> list[Card]:
                 deck.append(Card(suit=suit, rank=rank, cid=cid))
                 cid += 1
     return deck
+
+
+_S = TypeVar("_S", bound="Stack")
 
 
 # ---------- stacks ----------
@@ -309,7 +312,7 @@ class Game:
         raise NotImplementedError
 
     # -- helpers --
-    def _new_stack(self, cls, *args, **kwargs) -> Stack:
+    def _new_stack(self, cls: type[_S], *args: Any, **kwargs: Any) -> _S:
         sid = len(self.stacks)
         s = cls(sid, self, *args, **kwargs) if args or kwargs else cls(sid, self)
         self.stacks.append(s)
@@ -362,6 +365,13 @@ class Game:
             src.cards[-1].face_up = False
         cards = dst.cards[-m.n:]
         dst.cards = dst.cards[:-m.n]
+        # Talon draws flip cards face-up and (for turn-3) push them in pop
+        # order, so on undo we have to reverse them and re-hide them so
+        # the talon looks exactly as it did before the draw.
+        if src.kind == "talon":
+            cards = list(reversed(cards))
+            for c in cards:
+                c.face_up = False
         src.cards.extend(cards)
         self.moves_made = max(0, self.moves_made - 1)
         return True
@@ -556,8 +566,34 @@ class _SpiderFoundation(Stack):
 # ----- extra variants -----
 
 class KlondikeTurn3(Klondike):
-    """Classic Klondike but waste turns 3 at a time (stub: still turns 1)."""
+    """Classic Klondike but the stock flips 3 cards at a time to the waste.
+    Only the topmost waste card is draggable (standard convention)."""
     name = "Klondike (turn 3)"
+    draw_count = 3
+
+    def flip_stock(self) -> bool:
+        if self.talon is None or self.waste is None:
+            return False
+        if self.talon.cards:
+            n = min(self.draw_count, len(self.talon.cards))
+            for _ in range(n):
+                c = self.talon.cards.pop()
+                c.face_up = True
+                self.waste.cards.append(c)
+            # One Move record covers the batch so a single undo reverses it.
+            self.history.append(Move(self.talon.sid, self.waste.sid, n, False))
+            self.moves_made += 1
+            return True
+        # Recycle waste → talon (face down, reversed).
+        if self.waste.cards:
+            recycled = []
+            while self.waste.cards:
+                c = self.waste.cards.pop()
+                c.face_up = False
+                recycled.append(c)
+            self.talon.cards = recycled
+            return True
+        return False
 
 
 class Yukon(Game):
@@ -653,19 +689,19 @@ class RelaxedFreeCell(FreeCell):
 
 
 # Golf: tableau of 5×7 face-up cards. A single waste pile. Any card of
-# adjacent rank (mod 13) to the waste top can be played.
+# adjacent rank (mod 13) to the waste top can be played. Rank wrap is on:
+# Ace ↔ King counts as adjacent (classic "wrap" Golf).
 class _GolfWaste(Stack):
     kind = "foundation"  # render like a foundation
 
     def accepts(self, src, cards):
         if len(cards) != 1 or not self.cards:
-            # Initial card is seeded at deal-time; accept from any tableau
-            # if top exists and ranks differ by 1.
-            return len(cards) == 1 and bool(self.cards)
+            return False
         head = cards[0]
         top = self.cards[-1]
-        # Any suit; rank ±1 (Ace wraps to 2 only, King wraps to Q only).
-        return abs(head.rank - top.rank) == 1
+        diff = abs(head.rank - top.rank)
+        # Adjacent ranks, or A↔K wrap (rank 0 ↔ rank 12).
+        return diff == 1 or diff == 12
 
 
 class _GolfRow(OpenStack):

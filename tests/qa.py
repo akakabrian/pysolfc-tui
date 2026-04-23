@@ -197,6 +197,7 @@ async def s_spider_deal_shape(app, pilot):
     g = app.game
     assert isinstance(g, E.Spider)
     assert [len(r) for r in g.rows] == [6, 6, 6, 6, 5, 5, 5, 5, 5, 5]
+    assert g.talon is not None
     assert len(g.talon.cards) == 50
 
 
@@ -234,6 +235,39 @@ async def s_auto_send_promotes_ace(app, pilot):
     assert heart_f.cards[0].rank == E.ACE
 
 
+async def s_klondike_turn3_flips_three(app, pilot):
+    """Klondike (turn 3) flips 3 cards per stock tap and one undo reverses them."""
+    app._variant = "Klondike (turn 3)"
+    app.action_new_game()
+    g = app.game
+    assert g.talon is not None and g.waste is not None
+    before_talon = list(g.talon.cards)
+    assert len(g.waste.cards) == 0
+    g.flip_stock()
+    assert len(g.waste.cards) == 3
+    assert all(c.face_up for c in g.waste.cards)
+    g.undo()
+    assert len(g.waste.cards) == 0
+    assert [c.cid for c in g.talon.cards] == [c.cid for c in before_talon]
+    assert all(not c.face_up for c in g.talon.cards)
+
+
+async def s_golf_rank_wrap(app, pilot):
+    """Golf: Ace can land on King and vice-versa."""
+    app._variant = "Golf"
+    app.action_new_game()
+    g = app.game
+    assert isinstance(g, E.Golf)
+    waste = g.foundations[0]
+    # Force a King on top of waste, and an Ace on row 0.
+    waste.cards = [E.Card(E.SPADE, 12, face_up=True, cid=900)]
+    g.rows[0].cards = [E.Card(E.HEART, 0, face_up=True, cid=901)]
+    assert g.move(g.rows[0], waste, 1), "Ace onto King should succeed (wrap)"
+    # And King onto Ace.
+    g.rows[1].cards = [E.Card(E.CLUB, 12, face_up=True, cid=902)]
+    assert g.move(g.rows[1], waste, 1), "King onto Ace should succeed (wrap)"
+
+
 async def s_mouse_click_selects_stack(app, pilot):
     """Clicking on a tableau column selects that stack's topmost card."""
     g = app.game
@@ -266,6 +300,8 @@ SCENARIOS: list[Scenario] = [
     Scenario("help_screen_opens_and_closes", s_help_screen_opens_and_closes),
     Scenario("variants_all_deal_without_error", s_variants_all_deal_without_error),
     Scenario("auto_send_promotes_ace", s_auto_send_promotes_ace),
+    Scenario("klondike_turn3_flips_three", s_klondike_turn3_flips_three),
+    Scenario("golf_rank_wrap", s_golf_rank_wrap),
     Scenario("mouse_click_selects_stack", s_mouse_click_selects_stack),
 ]
 

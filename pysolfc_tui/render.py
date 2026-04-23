@@ -16,9 +16,8 @@ render as a hatched back. Stock, waste, foundations all share the same
 from __future__ import annotations
 
 from rich.style import Style
-from rich.text import Text
 
-from .engine import Card, SUIT_GLYPHS, SUIT_IS_RED, Stack
+from .engine import Card, Stack
 
 CARD_W = 5
 CARD_H = 4
@@ -71,7 +70,7 @@ def card_face_rows(card: Card, selected: bool = False) -> list[tuple[str, Style]
 def card_back_rows(selected: bool = False) -> list[tuple[str, Style]]:
     bcolor = COL_SELECT if selected else COL_CARD_BACK
     border_style = Style.parse(f"bold {bcolor} on rgb(40,20,55)")
-    body_style = Style.parse(f"rgb(150,90,170) on rgb(50,25,70)")
+    body_style = Style.parse("rgb(150,90,170) on rgb(50,25,70)")
     return [
         ("╭───╮", border_style),
         ("│░░░│", body_style),

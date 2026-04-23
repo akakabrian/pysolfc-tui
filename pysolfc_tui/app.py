@@ -23,12 +23,11 @@ from dataclasses import dataclass
 
 from rich.segment import Segment
 from rich.style import Style
-from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.geometry import Region, Size
+from textual.geometry import Size
 from textual.reactive import reactive
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
@@ -92,17 +91,17 @@ class TableauView(ScrollView):
         #  FreeCell: [c][c][c][c] [F][F][F][F]
         #  Spider:   [F*8] ...... [stock]
         col = 0
-        top_stacks: list[E.Stack] = []
+        top_stacks: list[E.Stack | None] = []
         if isinstance(g, E.Spider):
             # Foundations on the left, stock on the right.
             top_stacks.extend(g.foundations)
-            top_stacks.append(g.talon)  # type: ignore[arg-type]
+            top_stacks.append(g.talon)
         elif isinstance(g, E.FreeCell):
             top_stacks.extend(g.cells)
             top_stacks.extend(g.foundations)
         else:  # Klondike-like
-            top_stacks.append(g.talon)  # type: ignore[arg-type]
-            top_stacks.append(g.waste)  # type: ignore[arg-type]
+            top_stacks.append(g.talon)
+            top_stacks.append(g.waste)
             top_stacks.append(None)  # spacer
             top_stacks.extend(g.foundations)
 
@@ -232,9 +231,11 @@ class TableauView(ScrollView):
             if not (0 <= local < step):
                 continue
             is_sel = (sel_from is not None and i >= sel_from)
-            show_cursor_sel = cursor_here and not self._has_selection()
+            # Cursor highlight only applies to the topmost card (handled
+            # below); non-top fanned cards show selection only when the
+            # player has actually picked them up.
             if card.face_up:
-                rows = R.card_face_rows(card, selected=is_sel or show_cursor_sel and i == 0 and False)
+                rows = R.card_face_rows(card, selected=is_sel)
             else:
                 rows = R.card_back_rows(selected=is_sel)
             text, style = rows[local]
@@ -379,6 +380,9 @@ class StatusPanel(Static):
 
     def refresh_status(self, app: "PysolApp") -> None:
         g = app.game
+        tv = app.tableau
+        if tv is None:
+            return
         lines = [
             f"[b]{g.name}[/b]",
             f"Seed: {g.seed}",
@@ -386,12 +390,12 @@ class StatusPanel(Static):
             f"Won:  {'YES' if g.is_won() else 'no'}",
         ]
         # Show selection
-        if app.tableau.selected_sid is not None:
-            s = g.stacks[app.tableau.selected_sid]
-            n = len(s.cards) - app.tableau.selected_from
+        if tv.selected_sid is not None:
+            s = g.stacks[tv.selected_sid]
+            n = len(s.cards) - tv.selected_from
             lines.append(f"Holding: {n} card(s) from #{s.sid}")
         else:
-            cur = g.stacks[app.tableau.cursor_sid]
+            cur = g.stacks[tv.cursor_sid]
             if cur.cards:
                 top = cur.cards[-1]
                 face = "?" if not top.face_up else f"{top.rank_label}{top.glyph}"

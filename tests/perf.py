@@ -13,6 +13,7 @@ async def main() -> None:
     async with app.run_test(size=(140, 45)) as pilot:
         await pilot.pause()
         tv = app.tableau
+        assert tv is not None
         # full render (all rows)
         t0 = time.perf_counter()
         n_rows = tv._canvas_h
