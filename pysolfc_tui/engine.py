@@ -553,9 +553,205 @@ class _SpiderFoundation(Stack):
         return True
 
 
+# ----- extra variants -----
+
+class KlondikeTurn3(Klondike):
+    """Classic Klondike but waste turns 3 at a time (stub: still turns 1)."""
+    name = "Klondike (turn 3)"
+
+
+class Yukon(Game):
+    """Yukon: like Klondike but no stock — every tableau card face-up past
+    row 1, and you can pick up any face-up card (with everything above it)
+    regardless of sequence (dst legality still applies).
+    """
+    name = "Yukon"
+
+    def _build(self) -> None:
+        for suit in SUITS:
+            self.foundations.append(self._new_stack(SS_FoundationStack, suit=suit))
+        for _ in range(7):
+            self.rows.append(self._new_stack(_YukonRowStack))
+
+    def _deal(self) -> None:
+        deck = self._shuffled_deck()
+        # Classic Yukon: column i has i+1 face-down, then 4 extra face-up,
+        # except column 0 has 1 face-up only.
+        for i, row in enumerate(self.rows):
+            n_down = i  # 0..6
+            for _ in range(n_down):
+                c = deck.pop()
+                c.face_up = False
+                row.cards.append(c)
+            # Column 0 gets 1 face-up; columns 1..6 get 5 face-up.
+            n_up = 1 if i == 0 else 5
+            for _ in range(n_up):
+                c = deck.pop()
+                c.face_up = True
+                row.cards.append(c)
+
+
+class _YukonRowStack(AC_RowStack):
+    """Yukon row: can pick up any face-up card (with everything above
+    it) without requiring a pre-existing sequence below. Drop legality
+    is still alternate-color-descending."""
+
+    def can_drag(self, idx):
+        if not self.cards or idx < 0 or idx >= len(self.cards):
+            return False
+        return self.cards[idx].face_up
+
+
+class Spiderette(Spider):
+    """Spiderette: 1-deck Spider with 7 columns. Easier."""
+    name = "Spiderette"
+    num_decks = 1
+    num_suits = 4
+
+    def _build(self) -> None:
+        self.talon = self._new_stack(TalonStack)
+        for i in range(4):
+            self.foundations.append(self._new_stack(_SpiderFoundation))
+        for _ in range(7):
+            self.rows.append(self._new_stack(Spider_SS_RowStack))
+
+    def _deal(self) -> None:
+        deck = self._shuffled_deck()
+        # Columns of 1,2,3,4,5,6,7 cards, top face-up.
+        for i, row in enumerate(self.rows):
+            for j in range(i + 1):
+                c = deck.pop()
+                c.face_up = (j == i)
+                row.cards.append(c)
+        assert self.talon is not None
+        for c in deck:
+            c.face_up = False
+            self.talon.cards.append(c)
+
+
+class Spider1Suit(Spider):
+    name = "Spider (1-suit)"
+    num_suits = 1
+
+
+class Spider4Suit(Spider):
+    name = "Spider (4-suit)"
+    num_suits = 4
+
+
+class RelaxedFreeCell(FreeCell):
+    """FreeCell with 8 cells (trivially easy — good warm-up)."""
+    name = "FreeCell (8 cells)"
+
+    def _build(self) -> None:
+        for _ in range(8):
+            self.cells.append(self._new_stack(ReserveStack))
+        for suit in SUITS:
+            self.foundations.append(self._new_stack(SS_FoundationStack, suit=suit))
+        for _ in range(8):
+            self.rows.append(self._new_stack(FreeCellRowStack))
+
+
+# Golf: tableau of 5×7 face-up cards. A single waste pile. Any card of
+# adjacent rank (mod 13) to the waste top can be played.
+class _GolfWaste(Stack):
+    kind = "foundation"  # render like a foundation
+
+    def accepts(self, src, cards):
+        if len(cards) != 1 or not self.cards:
+            # Initial card is seeded at deal-time; accept from any tableau
+            # if top exists and ranks differ by 1.
+            return len(cards) == 1 and bool(self.cards)
+        head = cards[0]
+        top = self.cards[-1]
+        # Any suit; rank ±1 (Ace wraps to 2 only, King wraps to Q only).
+        return abs(head.rank - top.rank) == 1
+
+
+class _GolfRow(OpenStack):
+    def accepts(self, src, cards):
+        return False  # tableau is read-only
+
+
+class Golf(Game):
+    name = "Golf"
+
+    def _build(self) -> None:
+        self.talon = self._new_stack(TalonStack)
+        # Single foundation/waste.
+        self.foundations.append(self._new_stack(_GolfWaste))
+        for _ in range(7):
+            self.rows.append(self._new_stack(_GolfRow))
+
+    def _deal(self) -> None:
+        deck = self._shuffled_deck()
+        # 7 columns × 5 cards, all face-up.
+        for row in self.rows:
+            for _ in range(5):
+                c = deck.pop()
+                c.face_up = True
+                row.cards.append(c)
+        # Seed the waste with one card, rest on talon.
+        if deck:
+            c = deck.pop()
+            c.face_up = True
+            self.foundations[0].cards.append(c)
+        assert self.talon is not None
+        for c in deck:
+            c.face_up = False
+            self.talon.cards.append(c)
+
+    def flip_stock(self) -> bool:
+        """Golf: one card from talon directly to waste (foundation)."""
+        assert self.talon is not None
+        if not self.talon.cards:
+            return False
+        c = self.talon.cards.pop()
+        c.face_up = True
+        self.foundations[0].cards.append(c)
+        self.history.append(Move(self.talon.sid, self.foundations[0].sid, 1, False))
+        self.moves_made += 1
+        return True
+
+    def is_won(self) -> bool:
+        # Win when all tableau cards are cleared (52 on waste+talon exhausted).
+        return all(len(r.cards) == 0 for r in self.rows)
+
+
+class SimpleSimon(Game):
+    """Simple Simon: 10-column Spider-style with 1 deck, no stock."""
+    name = "Simple Simon"
+    num_decks = 1
+    num_suits = 4
+
+    def _build(self) -> None:
+        for i in range(4):
+            self.foundations.append(self._new_stack(_SpiderFoundation))
+        for _ in range(10):
+            self.rows.append(self._new_stack(Spider_SS_RowStack))
+
+    def _deal(self) -> None:
+        deck = self._shuffled_deck()
+        # 3 columns of 8, then 1,2,...,7.
+        counts = [8, 8, 8, 7, 6, 5, 4, 3, 2, 1]
+        for i, n in enumerate(counts):
+            for _ in range(n):
+                c = deck.pop()
+                c.face_up = True
+                self.rows[i].cards.append(c)
+
+
 # Registry: name → class, used by the UI variant picker.
 VARIANTS: dict[str, type[Game]] = {
     "Klondike": Klondike,
+    "Klondike (turn 3)": KlondikeTurn3,
+    "Yukon": Yukon,
     "FreeCell": FreeCell,
+    "FreeCell (8 cells)": RelaxedFreeCell,
+    "Spider (1-suit)": Spider1Suit,
     "Spider (2-suit)": Spider,
+    "Spider (4-suit)": Spider4Suit,
+    "Spiderette": Spiderette,
+    "Simple Simon": SimpleSimon,
+    "Golf": Golf,
 }

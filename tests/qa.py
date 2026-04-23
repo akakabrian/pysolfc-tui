@@ -200,6 +200,53 @@ async def s_spider_deal_shape(app, pilot):
     assert len(g.talon.cards) == 50
 
 
+async def s_help_screen_opens_and_closes(app, pilot):
+    await pilot.press("question_mark")
+    await pilot.pause()
+    assert "HelpScreen" in str(type(app.screen).__name__)
+    # Any key dismisses
+    await pilot.press("escape")
+    await pilot.pause()
+    # Back on main screen.
+    assert "HelpScreen" not in str(type(app.screen).__name__)
+
+
+async def s_variants_all_deal_without_error(app, pilot):
+    """Every variant in the registry deals a well-formed game."""
+    for name in E.VARIANTS:
+        g = E.VARIANTS[name](seed=7)
+        assert len(g.stacks) > 0, f"{name}: no stacks"
+        assert len(g.rows) > 0, f"{name}: no rows"
+        # snapshot is callable
+        snap = g.snapshot()
+        assert snap["name"]
+
+
+async def s_auto_send_promotes_ace(app, pilot):
+    """`a` auto-sends eligible aces (and runs) to foundations."""
+    g = app.game
+    # Plant an Ace of Hearts on a row.
+    g.rows[0].cards = [E.Card(E.HEART, 0, face_up=True, cid=555)]
+    # Trigger auto-send
+    app.action_auto_send()
+    heart_f = next(f for f in g.foundations if getattr(f, "suit", None) == E.HEART)
+    assert len(heart_f.cards) == 1, "Ace of Hearts should be on foundation"
+    assert heart_f.cards[0].rank == E.ACE
+
+
+async def s_mouse_click_selects_stack(app, pilot):
+    """Clicking on a tableau column selects that stack's topmost card."""
+    g = app.game
+    # Click coordinates: tableau row 0 (col 0), which has 1 card, at y just
+    # below the top-row region. Use the slot directly.
+    tv = app.tableau
+    slot = next(s for s in tv.slots if s.row == 1 and s.col == 0)
+    # Compute a canvas-space hit at the card's top-left.
+    hit = tv._hit_test(slot.x + 2, slot.y + 1)
+    assert hit is not None, "hit test should find the stack"
+    assert hit[0] == g.rows[0].sid
+
+
 SCENARIOS: list[Scenario] = [
     Scenario("mount_clean", s_mount_clean),
     Scenario("deal_shape", s_deal_shape),
@@ -216,6 +263,10 @@ SCENARIOS: list[Scenario] = [
     Scenario("render_line_non_empty", s_render_line_non_empty),
     Scenario("freecell_deal_shape", s_freecell_deal_shape),
     Scenario("spider_deal_shape", s_spider_deal_shape),
+    Scenario("help_screen_opens_and_closes", s_help_screen_opens_and_closes),
+    Scenario("variants_all_deal_without_error", s_variants_all_deal_without_error),
+    Scenario("auto_send_promotes_ace", s_auto_send_promotes_ace),
+    Scenario("mouse_click_selects_stack", s_mouse_click_selects_stack),
 ]
 
 

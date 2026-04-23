@@ -36,6 +36,7 @@ from textual.widgets import Footer, Header, RichLog, Static
 
 from . import engine as E
 from . import render as R
+from .screens import HelpScreen, VariantScreen, WinScreen
 
 # --- layout constants ---
 COL_W = R.CARD_W + 1       # 1-col gap between cards
@@ -196,7 +197,23 @@ class TableauView(ScrollView):
                 self._write_at(slot.x, text, style, chars, styles)
             return
 
-        # Figure out (card_index, rows_into_card) for canvas_y.
+        # Top-row stacks (stock/waste/foundation/cell) render as a single
+        # stacked footprint — only the top card is visible.
+        if slot.row == 0:
+            local_y = canvas_y - slot.y
+            if not (0 <= local_y < R.CARD_H):
+                return
+            card = stack.cards[-1]
+            is_sel = (sel_from is not None and (len(stack.cards) - 1) >= sel_from)
+            if card.face_up:
+                rows = R.card_face_rows(card, selected=is_sel or cursor_here)
+            else:
+                rows = R.card_back_rows(selected=is_sel or cursor_here)
+            text, style = rows[local_y]
+            self._write_at(slot.x, text, style, chars, styles)
+            return
+
+        # Tableau row: fanned.
         y0 = slot.y
         offsets: list[tuple[int, int]] = []  # (card_idx, y0_of_card)
         cy = y0
@@ -302,7 +319,10 @@ class TableauView(ScrollView):
     def _hit_test(self, x: int, y: int) -> tuple[int, int] | None:
         """Return (sid, card_index) for canvas coord (x, y), or None."""
         assert self.game is not None
-        for slot in self.slots:
+        # Check row-1 (tableau) slots first so they don't get shadowed by
+        # top-row slots that happen to share a column.
+        ordered = sorted(self.slots, key=lambda s: -s.row)
+        for slot in ordered:
             if not (slot.x <= x < slot.x + R.CARD_W):
                 continue
             stack = self.game.stacks[slot.sid]
@@ -310,7 +330,12 @@ class TableauView(ScrollView):
                 if slot.y <= y < slot.y + R.CARD_H:
                     return (slot.sid, 0)
                 continue
-            # Walk down the fanned cards.
+            if slot.row == 0:
+                # Stacked footprint: 4 rows total.
+                if slot.y <= y < slot.y + R.CARD_H:
+                    return (slot.sid, len(stack.cards) - 1)
+                continue
+            # Tableau (fanned). Walk cards.
             cy = slot.y
             for i, c in enumerate(stack.cards[:-1]):
                 step = R.FAN_OFFSET_UP if c.face_up else R.FAN_OFFSET
@@ -421,6 +446,7 @@ class PysolApp(App):
         Binding("s", "flip_stock", "Stock"),
         Binding("a", "auto_send", "Auto"),
         Binding("v", "variant", "Variant"),
+        Binding("question_mark", "help", "Help"),
         Binding("escape", "cancel_select", "Cancel"),
         Binding("space", "activate", "Pick/Drop", show=False),
         Binding("enter", "activate", "Pick/Drop"),
@@ -529,11 +555,15 @@ class PysolApp(App):
         self.refresh_all()
 
     def action_variant(self) -> None:
-        # Simple round-robin for now; phase B will turn this into a modal.
-        names = list(E.VARIANTS.keys())
-        i = names.index(self._variant)
-        self._variant = names[(i + 1) % len(names)]
-        self.action_new_game()
+        """Open a modal variant picker."""
+        def _selected(result: str | None) -> None:
+            if result and result in E.VARIANTS:
+                self._variant = result
+                self.action_new_game()
+        self.push_screen(VariantScreen(), _selected)
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen())
 
     # -- pick / drop --
     def _try_pickup(self, sid: int, card_idx: int | None) -> None:
@@ -582,11 +612,18 @@ class PysolApp(App):
             self.log_msg(f"Moved {n} to #{dst_sid}.")
             tv.selected_sid = None
             if self.game.is_won():
-                self.flash("🎉 You won! Press n for a new game.")
+                self.flash("You won! Press n for a new game.")
                 self.log_msg("[bold yellow]Game won![/bold yellow]")
+                self._celebrate_win()
         else:
             self.log_msg(f"Illegal move to #{dst_sid}.")
             tv.selected_sid = None
+
+    def _celebrate_win(self) -> None:
+        def _after(want_new: bool | None) -> None:
+            if want_new:
+                self.action_new_game()
+        self.push_screen(WinScreen(self.game), _after)
 
     # -- mouse routing --
     def on_tableau_view_stack_activated(self, message: TableauView.StackActivated) -> None:
