@@ -216,19 +216,17 @@ class TableauView(ScrollView):
         y0 = slot.y
         offsets: list[tuple[int, int]] = []  # (card_idx, y0_of_card)
         cy = y0
-        for i, c in enumerate(stack.cards[:-1]):
+        for i, _c in enumerate(stack.cards[:-1]):
             offsets.append((i, cy))
-            cy += R.FAN_OFFSET_UP if c.face_up else R.FAN_OFFSET
+            cy += R.FAN_OFFSET
         offsets.append((len(stack.cards) - 1, cy))
 
-        # Non-top cards contribute 1 row (face-down) or 2 rows (face-up
-        # — so we render the top border + rank/suit glyph row; full face
-        # becomes visible only on the topmost card).
+        # Non-top cards contribute exactly 2 rows; full face is visible
+        # only on the topmost card.
         for i, cy in offsets[:-1]:
             card = stack.cards[i]
             local = canvas_y - cy
-            step = R.FAN_OFFSET_UP if card.face_up else R.FAN_OFFSET
-            if not (0 <= local < step):
+            if not (0 <= local < R.FAN_OFFSET):
                 continue
             is_sel = (sel_from is not None and i >= sel_from)
             # Cursor highlight only applies to the topmost card (handled
@@ -338,11 +336,10 @@ class TableauView(ScrollView):
                 continue
             # Tableau (fanned). Walk cards.
             cy = slot.y
-            for i, c in enumerate(stack.cards[:-1]):
-                step = R.FAN_OFFSET_UP if c.face_up else R.FAN_OFFSET
-                if cy <= y < cy + step:
+            for i, _c in enumerate(stack.cards[:-1]):
+                if cy <= y < cy + R.FAN_OFFSET:
                     return (slot.sid, i)
-                cy += step
+                cy += R.FAN_OFFSET
             # Topmost card, full 4 rows.
             if cy <= y < cy + R.CARD_H:
                 return (slot.sid, len(stack.cards) - 1)

@@ -3,14 +3,14 @@
 Cards render as 5-wide × 4-tall bordered glyphs:
 
     ╭───╮
-    │A♠ │
+    │ K♠│
     │ ♠ │
     ╰───╯
 
-Fan stacks (tableau rows) overlap vertically — only row 0 of each card
-is visible except the topmost, which shows all 4 rows. Face-down cards
-render as a hatched back. Stock, waste, foundations all share the same
-5×4 footprint.
+Fan stacks (tableau rows) overlap vertically — non-top cards expose only
+their top 2 rows, while the topmost card shows all 4 rows. Face-down
+cards render as a shaded back. Stock, waste, foundations all share the
+same 5×4 footprint.
 """
 
 from __future__ import annotations
@@ -21,8 +21,7 @@ from .engine import Card, Stack
 
 CARD_W = 5
 CARD_H = 4
-FAN_OFFSET = 1       # face-down fan step (rows)
-FAN_OFFSET_UP = 2    # face-up fan step (rows)
+FAN_OFFSET = 2  # tableau fan step (rows for every non-top card)
 
 # Palette
 COL_BG_DARK = "rgb(18,28,18)"
@@ -47,9 +46,18 @@ STYLE_CURSOR = Style.parse(f"bold {COL_CURSOR}")
 
 
 def _rank_label(card: Card) -> str:
-    """2-character left-justified rank ('A ', '10', 'K ')."""
+    """2-character right-justified rank (' A', '10', ' K')."""
     r = card.rank_label
-    return r if len(r) == 2 else r + " "
+    return r if len(r) == 2 else (" " + r)
+
+
+def _card_sprite_rows(card: Card | None) -> tuple[str, str, str, str]:
+    """Return the 4 text rows for a card face or a card back sprite."""
+    if card is None:
+        return ("╭───╮", "│▒▒▒│", "│▒▒▒│", "╰───╯")
+    rank = _rank_label(card)
+    glyph = card.glyph
+    return ("╭───╮", f"│{rank}{glyph}│", f"│ {glyph} │", "╰───╯")
 
 
 def card_face_rows(card: Card, selected: bool = False) -> list[tuple[str, Style]]:
@@ -57,13 +65,12 @@ def card_face_rows(card: Card, selected: bool = False) -> list[tuple[str, Style]
     bcolor = COL_SELECT if selected else COL_BORDER
     border_style = Style.parse(f"bold {bcolor} on {COL_CARD_BG}")
     suit_style = STYLE_CARD_RED if card.is_red else STYLE_CARD_BLACK
-    rank = _rank_label(card)
-    glyph = card.glyph
+    sprite = _card_sprite_rows(card)
     return [
-        ("╭───╮", border_style),
-        (f"│{rank}{glyph}│", suit_style),
-        (f"│ {glyph} │", suit_style),
-        ("╰───╯", border_style),
+        (sprite[0], border_style),
+        (sprite[1], suit_style),
+        (sprite[2], suit_style),
+        (sprite[3], border_style),
     ]
 
 
@@ -71,11 +78,12 @@ def card_back_rows(selected: bool = False) -> list[tuple[str, Style]]:
     bcolor = COL_SELECT if selected else COL_CARD_BACK
     border_style = Style.parse(f"bold {bcolor} on rgb(40,20,55)")
     body_style = Style.parse("rgb(150,90,170) on rgb(50,25,70)")
+    sprite = _card_sprite_rows(None)
     return [
-        ("╭───╮", border_style),
-        ("│░░░│", body_style),
-        ("│░░░│", body_style),
-        ("╰───╯", border_style),
+        (sprite[0], border_style),
+        (sprite[1], body_style),
+        (sprite[2], body_style),
+        (sprite[3], border_style),
     ]
 
 
@@ -97,10 +105,5 @@ def stack_height(stack: Stack) -> int:
     """How many rows this stack consumes when rendered fanned."""
     if not stack.cards:
         return CARD_H
-    # Each card except the last contributes FAN_OFFSET rows (face-down)
-    # or FAN_OFFSET_UP rows (face-up). The topmost shows full CARD_H.
-    total = 0
-    for c in stack.cards[:-1]:
-        total += FAN_OFFSET_UP if c.face_up else FAN_OFFSET
-    total += CARD_H
-    return total
+    # Each non-top card contributes FAN_OFFSET rows; topmost shows full CARD_H.
+    return (len(stack.cards) - 1) * FAN_OFFSET + CARD_H

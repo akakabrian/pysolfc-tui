@@ -37,7 +37,7 @@ StatusPanel, LegendPanel {
     background: rgb(12,30,18);
 }
 
-StatusPanel { height: 10; }
+StatusPanel { height: 6; }
 LegendPanel { height: 1fr; }
 
 #log {
