@@ -15,8 +15,9 @@ def main() -> None:
                    help="Game variant (default: Klondike). Change in-app with `v`.")
     p.add_argument("--seed", "-s", type=int, default=None,
                    help="RNG seed for reproducible deals")
-    p.add_argument("--no-music", dest="music", action="store_false",
-                   help="Disable background music (on by default; toggle in-app with `m`)")
+    p.add_argument("--music", dest="music", action="store_true",
+                   help="Start background music on launch (toggle in-app with `m`). "
+                        "Off by default until the subprocess-cleanup path is fully wired.")
     args = p.parse_args()
     run(variant=args.variant, seed=args.seed, music=args.music)
 

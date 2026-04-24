@@ -42,14 +42,12 @@ TableauView {
 }
 
 #holding-pill {
-    height: 3;
-    width: 1fr;
-    content-align: center middle;
+    height: 1;
+    width: 100%;
     text-align: center;
-    color: #efe8d1;
-    background: #0e2414;
-    border: round #375a2d;
-    margin: 0 16;
+    color: #ffd45a;
+    background: #0c2a17;
+    text-style: bold;
 }
 
 #context-line {

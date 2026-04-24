@@ -505,7 +505,7 @@ class PysolApp(App):
     ]
 
     def __init__(self, variant: str = "Klondike", seed: int | None = None,
-                 music: bool = True) -> None:
+                 music: bool = False) -> None:
         super().__init__()
         self._variant = variant
         self._seed = seed
@@ -717,8 +717,9 @@ class PysolApp(App):
             return
         tv = self.tableau
         if tv.selected_sid is None:
+            # Leave the pill mounted + empty — toggling display would
+            # reflow the tableau and jitter card columns on every pickup.
             self.holding_pill.update("")
-            self.holding_pill.display = False
             return
         s = self.game.stacks[tv.selected_sid]
         n = len(s.cards) - tv.selected_from
@@ -726,7 +727,6 @@ class PysolApp(App):
         face = f"{card.rank_label}{card.glyph}" if card.face_up else "▒"
         suffix = f"  +{n - 1}" if n > 1 else ""
         self.holding_pill.update(f"HELD  {face} from #{s.sid}{suffix}")
-        self.holding_pill.display = True
 
     def _update_context_line(self) -> None:
         if self.context_line is None or self.tableau is None:
