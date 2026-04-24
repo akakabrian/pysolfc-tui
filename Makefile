@@ -8,7 +8,7 @@ venv: .venv/bin/python
 	.venv/bin/pip install -e .
 
 run: venv
-	.venv/bin/python pysol.py
+	.venv/bin/python pysol.py $(ARGS)
 
 test: venv
 	.venv/bin/python -m tests.qa

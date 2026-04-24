@@ -19,6 +19,33 @@ make
 make run
 ```
 
+Run without background music:
+```bash
+make run ARGS="--no-music"
+# or:
+.venv/bin/python pysol.py --no-music
+```
+
+## Updating
+```bash
+cd pysolfc-tui
+make update         # git pull + refresh deps
+make run
+```
+
+> **First-time update from a pre-Makefile clone:** the `update` target
+> didn't exist in old snapshots, so bootstrap it once with a manual
+> pull:
+>
+> ```bash
+> cd pysolfc-tui
+> git pull           # brings in the Makefile + new assets
+> make               # (re)creates venv if needed
+> make run
+> ```
+>
+> From then on, `make update` handles everything.
+
 ## Controls
 | Key | Action |
 |-----|--------|
@@ -31,9 +58,19 @@ make run
 | `u` | undo |
 | `n` | new game (same variant) |
 | `v` | variant picker modal |
+| `m` | toggle background music |
 | `?` | help screen |
 | `q` | quit |
 | mouse click | select that card (+ any legal stack above) / drop |
+
+While holding a card, `← →` cycles only **legal** drop targets —
+illegal stacks are skipped. Mouse clicks on illegal destinations ring
+the terminal bell and revert the selection.
+
+## Music credits
+Background tracks shipped under `pysolfc_tui/assets/music/`:
+- *Wallpaper* — Kevin MacLeod (incompetech.com), [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- *Dewdrop Fantasy* — Kevin MacLeod (incompetech.com), [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ## Testing
 ```bash
