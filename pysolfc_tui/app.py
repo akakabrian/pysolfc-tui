@@ -1,24 +1,24 @@
-"""Textual app — solitaire TUI.
+"""Textual app — solitaire TUI (large-card mockup layout).
 
 Layout:
-    ┌─ tableau ─────────────┬─ status ─┐
-    │  [stock][waste]  [F][F][F][F]    │
-    │                                  │
-    │  col0 col1 col2 col3 col4 col5 col6
-    │                         │ legend │
-    │                         │        │
-    └─────────────────────────┴────────┘
-                    │          log     │
-                    └──────────────────┘
+    ┌─ top HUD ──────────────────────────────────────────────┐
+    │  ◆ KLONDIKE ◆    MOVES: N     STOCK: N  WASTE: X        │
+    ├─ tableau canvas ───────────────────────────────────────┤
+    │  [stock][waste]          [F][F][F][F]                   │
+    │  col0 col1 col2 col3 col4 col5 col6                     │
+    ├─ holding pill ─────────────────────────────────────────┤
+    │              Holding: 1 card from #5 (9♥)               │
+    ├─ context action ───────────────────────────────────────┤
+    │                  Enter: drop 9♥ on 8♠                   │
+    └────────────────────────────────────────────────────────┘
 
-Cursor selects a stack; enter/space picks up the top card (or a legal
-group); second enter drops onto the cursor's current stack. Mouse clicks
-do the same — click on a card stack to select/drop. `s` flips stock,
-`u` undoes, `n` deals a new game, `v` opens the variant picker.
+Controls live in the `?` help modal. Cursor selects a stack;
+enter/space picks up / drops. Mouse clicks do the same.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from rich.segment import Segment
@@ -31,110 +31,113 @@ from textual.geometry import Size
 from textual.reactive import reactive
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
-from textual.widgets import Footer, Header, RichLog, Static
+from textual.widgets import RichLog, Static
 
 from . import engine as E
 from . import render as R
+from .music import MusicPlayer
 from .screens import HelpScreen, VariantScreen, WinScreen
 
-# --- layout constants ---
-COL_W = R.CARD_W + 1       # 1-col gap between cards
-COL_H_MARGIN = 1           # blank row between top row (stock/found) and tableau
-TABLEAU_TOP = R.CARD_H + COL_H_MARGIN
+MIN_COL_GAP = 2
+MAX_COL_GAP = 8
+LABEL_H = 1
+TOP_CARD_Y = LABEL_H                                   # cards sit below the label band
+TABLEAU_TOP = LABEL_H + R.CARD_H_TOP + 1               # +1 gap between top row and tableau
 
 
 @dataclass
 class StackSlot:
-    """Where a stack lives on the tableau canvas."""
     sid: int
-    col: int    # grid column (0..)
-    row: int    # grid row (0 = top, 1 = tableau)
-    x: int      # pixel (char) origin x
-    y: int      # pixel (char) origin y
+    col: int
+    row: int
+    x: int
+    y: int
 
 
 class TableauView(ScrollView):
-    """Main game canvas. Renders cards via `render_line`."""
-
-    # Keep the selection reactive so status panel can react.
     cursor_sid: reactive[int] = reactive(0)
     selected_sid: reactive[int | None] = reactive(None)
-    selected_from: reactive[int] = reactive(0)  # idx inside stack
+    selected_from: reactive[int] = reactive(0)
 
     def __init__(self) -> None:
         super().__init__()
         self.game: E.Game | None = None
         self.slots: list[StackSlot] = []
-        # sid → slot lookup
         self._slot_for: dict[int, StackSlot] = {}
-        # canvas dims
         self._canvas_w = 10
         self._canvas_h = 10
+        self._col_w = R.CARD_W + MIN_COL_GAP
+        self._x_offset = 1
 
-    # -- setup --
     def load_game(self, game: E.Game) -> None:
         self.game = game
         self._layout_slots()
         self.virtual_size = Size(self._canvas_w, self._canvas_h)
-        # Default cursor on first row (stock if present, else first row).
         self.cursor_sid = self.slots[0].sid if self.slots else 0
         self.selected_sid = None
         self.refresh()
 
     def _layout_slots(self) -> None:
-        """Compute slot positions for the current game's stacks."""
         assert self.game is not None
         g = self.game
-        slots: list[StackSlot] = []
-        # Row 0: stock, waste, gap, foundations OR cells, foundations.
-        #  Klondike: [stock][waste] ... [F][F][F][F]
-        #  FreeCell: [c][c][c][c] [F][F][F][F]
-        #  Spider:   [F*8] ...... [stock]
-        col = 0
+
         top_stacks: list[E.Stack | None] = []
         if isinstance(g, E.Spider):
-            # Foundations on the left, stock on the right.
             top_stacks.extend(g.foundations)
             top_stacks.append(g.talon)
         elif isinstance(g, E.FreeCell):
             top_stacks.extend(g.cells)
             top_stacks.extend(g.foundations)
-        else:  # Klondike-like
+        else:
             top_stacks.append(g.talon)
             top_stacks.append(g.waste)
-            top_stacks.append(None)  # spacer
+            top_stacks.append(None)
             top_stacks.extend(g.foundations)
 
+        num_cols = max(len(top_stacks), len(g.rows))
+        self._col_w, self._x_offset, self._canvas_w = self._compute_metrics(num_cols)
+
+        slots: list[StackSlot] = []
+        col = 0
         for s in top_stacks:
             if s is None:
                 col += 1
                 continue
-            slot = StackSlot(sid=s.sid, col=col, row=0,
-                             x=col * COL_W + 1, y=0)
-            slots.append(slot)
+            slots.append(StackSlot(sid=s.sid, col=col, row=0,
+                                   x=col * self._col_w + self._x_offset,
+                                   y=TOP_CARD_Y))
             col += 1
 
-        top_cols = col
-
-        # Row 1: tableau rows
         for i, s in enumerate(g.rows):
-            slot = StackSlot(sid=s.sid, col=i, row=1,
-                             x=i * COL_W + 1, y=TABLEAU_TOP)
-            slots.append(slot)
+            slots.append(StackSlot(sid=s.sid, col=i, row=1,
+                                   x=i * self._col_w + self._x_offset,
+                                   y=TABLEAU_TOP))
 
         self.slots = slots
         self._slot_for = {sl.sid: sl for sl in slots}
 
-        # Canvas dims
-        max_col = max(top_cols, len(g.rows))
-        self._canvas_w = max_col * COL_W + 2
-        # Tallest tableau column determines height.
         tallest = max((R.stack_height(s) for s in g.rows), default=R.CARD_H)
         self._canvas_h = TABLEAU_TOP + tallest + 2
 
-    # -- rendering --
+    def _compute_metrics(self, num_cols: int) -> tuple[int, int, int]:
+        """Pick col-width + x-offset that centers `num_cols` cards in the viewport."""
+        vp_w = max(self.size.width or 0, R.CARD_W * num_cols + 4)
+        gap = max(MIN_COL_GAP, (vp_w - num_cols * R.CARD_W) // max(1, num_cols))
+        gap = min(MAX_COL_GAP, gap)
+        col_w = R.CARD_W + gap
+        used = num_cols * col_w - gap          # trailing gap is dead space
+        x_offset = max(1, (vp_w - used) // 2)
+        canvas_w = max(vp_w, used + x_offset + 1)
+        return col_w, x_offset, canvas_w
+
+    def on_resize(self, event: events.Resize) -> None:
+        if self.game is None:
+            return
+        self._layout_slots()
+        self.virtual_size = Size(self._canvas_w, self._canvas_h)
+        self.refresh()
+
     def render_line(self, y: int) -> Strip:
-        """Render one row of the canvas, cropped to the viewport."""
         if self.game is None:
             return Strip.blank(self.size.width)
 
@@ -142,8 +145,6 @@ class TableauView(ScrollView):
         canvas_y = y + int(scroll_y)
         width = self.size.width
 
-        # Build a list of (x, text, style) paintings covering canvas_y.
-        # Simpler: paint a fixed-length char buffer.
         buf_w = self._canvas_w
         chars = [" "] * buf_w
         styles: list[Style | None] = [None] * buf_w
@@ -152,7 +153,10 @@ class TableauView(ScrollView):
         for slot in self.slots:
             self._paint_slot(slot, canvas_y, chars, styles)
 
-        # Crop to viewport
+        # Label band above the top row + stack-number band at the bottom.
+        self._paint_top_labels(canvas_y, chars, styles)
+        self._paint_stack_numbers(canvas_y, chars, styles)
+
         start = int(scroll_x)
         end = min(buf_w, start + width)
         segments: list[Segment] = []
@@ -170,68 +174,91 @@ class TableauView(ScrollView):
         if cur_text:
             segments.append(Segment(cur_text, cur_style))
 
-        # Pad to full width
         rendered_w = end - start
         if rendered_w < width:
             segments.append(Segment(" " * (width - rendered_w), bg_default))
 
         return Strip(segments)
 
+    def _paint_stack_numbers(self, canvas_y: int,
+                             chars: list[str], styles: list[Style | None]) -> None:
+        if canvas_y != self._canvas_h - 1:
+            return
+        style = Style.parse(f"{R.COL_EMPTY} on {R.COL_BG_DARK}")
+        for slot in self.slots:
+            if slot.row != 1:
+                continue
+            label = f"#{slot.col + 1}".center(R.CARD_W)
+            self._write_at(slot.x, label, style, chars, styles)
+
+    def _paint_top_labels(self, canvas_y: int,
+                          chars: list[str], styles: list[Style | None]) -> None:
+        if canvas_y != 0:
+            return
+        style = Style.parse(f"bold {R.COL_EMPTY} on {R.COL_BG_DARK}")
+        assert self.game is not None
+        for slot in self.slots:
+            if slot.row != 0:
+                continue
+            stack = self.game.stacks[slot.sid]
+            label = self._label_for_top_stack(stack)
+            text = label.center(R.CARD_W)
+            self._write_at(slot.x, text, style, chars, styles)
+
+    def _label_for_top_stack(self, stack: E.Stack) -> str:
+        # Only the stock count is worth a text label — waste/foundations
+        # already carry their suit glyph on the card itself.
+        if stack.kind == "talon":
+            return f"STOCK {len(stack.cards)}"
+        return ""
+
     def _paint_slot(self, slot: StackSlot, canvas_y: int,
                     chars: list[str], styles: list[Style | None]) -> None:
-        """Paint the stack at `slot` into the chars/styles buffer if it
-        intersects canvas_y."""
         assert self.game is not None
         stack = self.game.stacks[slot.sid]
         sel_from = self._selected_from_for(slot.sid)
         cursor_here = (slot.sid == self.cursor_sid)
+        is_top_row = (slot.row == 0)
+        card_h = R.CARD_H_TOP if is_top_row else R.CARD_H
 
         if not stack.cards:
-            # Empty slot — 4 rows tall.
             local_y = canvas_y - slot.y
-            if 0 <= local_y < R.CARD_H:
+            if 0 <= local_y < card_h:
                 label = _empty_label(stack)
-                rows = R.empty_slot_rows(label, selected=cursor_here)
+                rows = R.empty_slot_rows(label, selected=cursor_here, top=is_top_row)
                 text, style = rows[local_y]
                 self._write_at(slot.x, text, style, chars, styles)
             return
 
-        # Top-row stacks (stock/waste/foundation/cell) render as a single
-        # stacked footprint — only the top card is visible.
-        if slot.row == 0:
+        if is_top_row:
             local_y = canvas_y - slot.y
-            if not (0 <= local_y < R.CARD_H):
+            if not (0 <= local_y < card_h):
                 return
             card = stack.cards[-1]
             is_sel = (sel_from is not None and (len(stack.cards) - 1) >= sel_from)
             if card.face_up:
-                rows = R.card_face_rows(card, selected=is_sel or cursor_here)
+                rows = R.card_face_rows(card, selected=is_sel or cursor_here, top=True)
             else:
-                rows = R.card_back_rows(selected=is_sel or cursor_here)
+                rows = R.card_back_rows(selected=is_sel or cursor_here, top=True)
             text, style = rows[local_y]
             self._write_at(slot.x, text, style, chars, styles)
             return
 
-        # Tableau row: fanned.
-        y0 = slot.y
-        offsets: list[tuple[int, int]] = []  # (card_idx, y0_of_card)
-        cy = y0
-        for i, _c in enumerate(stack.cards[:-1]):
+        # Tableau fan — per-card offsets (face-down: 1 row, face-up: 2 rows).
+        cy = slot.y
+        offsets: list[tuple[int, int]] = []
+        for i, c in enumerate(stack.cards[:-1]):
             offsets.append((i, cy))
-            cy += R.FAN_OFFSET
+            cy += R.FAN_UP if c.face_up else R.FAN_DOWN
         offsets.append((len(stack.cards) - 1, cy))
 
-        # Non-top cards contribute exactly 2 rows; full face is visible
-        # only on the topmost card.
         for i, cy in offsets[:-1]:
             card = stack.cards[i]
             local = canvas_y - cy
-            if not (0 <= local < R.FAN_OFFSET):
+            this_offset = R.FAN_UP if card.face_up else R.FAN_DOWN
+            if not (0 <= local < this_offset):
                 continue
             is_sel = (sel_from is not None and i >= sel_from)
-            # Cursor highlight only applies to the topmost card (handled
-            # below); non-top fanned cards show selection only when the
-            # player has actually picked them up.
             if card.face_up:
                 rows = R.card_face_rows(card, selected=is_sel)
             else:
@@ -239,7 +266,6 @@ class TableauView(ScrollView):
             text, style = rows[local]
             self._write_at(slot.x, text, style, chars, styles)
 
-        # Topmost card (full 4 rows).
         i_top, cy_top = offsets[-1]
         card = stack.cards[i_top]
         local = canvas_y - cy_top
@@ -270,11 +296,7 @@ class TableauView(ScrollView):
     def _has_selection(self) -> bool:
         return self.selected_sid is not None
 
-    # -- input: cursor navigation --
     def move_cursor(self, dsid: int) -> None:
-        # Find slot order in a grid-friendly way. Simplest: list slots,
-        # jump by 1. "Right/left" = next/prev in list order; "up/down" =
-        # toggle between row 0 and the nearest column on row 1.
         if not self.slots:
             return
         cur = self._slot_for.get(self.cursor_sid)
@@ -282,28 +304,52 @@ class TableauView(ScrollView):
             self.cursor_sid = self.slots[0].sid
             self.refresh()
             return
+
+        # Restrict cursor to stacks we could actually drop the held run onto
+        # (plus the source stack, so Enter-on-self still cancels).
+        candidates = self._navigable_slots()
+        if not candidates:
+            return
+        if cur not in candidates:
+            candidates.sort(key=lambda s: (s.row != cur.row, abs(s.col - cur.col)))
+            self.cursor_sid = candidates[0].sid
+            self.refresh()
+            return
+
         if dsid == +1 or dsid == -1:
-            idx = self.slots.index(cur)
-            nxt = (idx + dsid) % len(self.slots)
-            self.cursor_sid = self.slots[nxt].sid
+            idx = candidates.index(cur)
+            nxt = (idx + dsid) % len(candidates)
+            self.cursor_sid = candidates[nxt].sid
         elif dsid == +2 or dsid == -2:
-            # up/down: swap row, keep column closest.
             target_row = 1 if cur.row == 0 and dsid == +2 else (
                 0 if cur.row == 1 and dsid == -2 else cur.row)
             if target_row == cur.row:
-                # no same-row movement
                 return
-            candidates = [s for s in self.slots if s.row == target_row]
-            if not candidates:
+            row_cands = [s for s in candidates if s.row == target_row]
+            if not row_cands:
                 return
-            # Nearest column
-            candidates.sort(key=lambda s: abs(s.col - cur.col))
-            self.cursor_sid = candidates[0].sid
+            row_cands.sort(key=lambda s: abs(s.col - cur.col))
+            self.cursor_sid = row_cands[0].sid
         self.refresh()
 
-    # -- input: mouse --
+    def _navigable_slots(self) -> list[StackSlot]:
+        """All slots the cursor may land on right now. When holding a run,
+        this is the source (for cancel) plus legal drop targets."""
+        if self.selected_sid is None or self.game is None:
+            return list(self.slots)
+        src = self.game.stacks[self.selected_sid]
+        held = src.cards[self.selected_from:]
+        out: list[StackSlot] = []
+        for slot in self.slots:
+            if slot.sid == self.selected_sid:
+                out.append(slot)
+                continue
+            dst = self.game.stacks[slot.sid]
+            if dst.accepts(src, held):
+                out.append(slot)
+        return out
+
     def on_click(self, event: events.Click) -> None:
-        """Translate click coords into a stack + card-index."""
         if self.game is None:
             return
         x = event.x + int(self.scroll_offset.x)
@@ -316,31 +362,28 @@ class TableauView(ScrollView):
         self.post_message(self.StackActivated(sid, card_idx))
 
     def _hit_test(self, x: int, y: int) -> tuple[int, int] | None:
-        """Return (sid, card_index) for canvas coord (x, y), or None."""
         assert self.game is not None
-        # Check row-1 (tableau) slots first so they don't get shadowed by
-        # top-row slots that happen to share a column.
         ordered = sorted(self.slots, key=lambda s: -s.row)
         for slot in ordered:
             if not (slot.x <= x < slot.x + R.CARD_W):
                 continue
+            is_top_row = (slot.row == 0)
+            card_h = R.CARD_H_TOP if is_top_row else R.CARD_H
             stack = self.game.stacks[slot.sid]
             if not stack.cards:
-                if slot.y <= y < slot.y + R.CARD_H:
+                if slot.y <= y < slot.y + card_h:
                     return (slot.sid, 0)
                 continue
-            if slot.row == 0:
-                # Stacked footprint: 4 rows total.
-                if slot.y <= y < slot.y + R.CARD_H:
+            if is_top_row:
+                if slot.y <= y < slot.y + card_h:
                     return (slot.sid, len(stack.cards) - 1)
                 continue
-            # Tableau (fanned). Walk cards.
             cy = slot.y
-            for i, _c in enumerate(stack.cards[:-1]):
-                if cy <= y < cy + R.FAN_OFFSET:
+            for i, c in enumerate(stack.cards[:-1]):
+                off = R.FAN_UP if c.face_up else R.FAN_DOWN
+                if cy <= y < cy + off:
                     return (slot.sid, i)
-                cy += R.FAN_OFFSET
-            # Topmost card, full 4 rows.
+                cy += off
             if cy <= y < cy + R.CARD_H:
                 return (slot.sid, len(stack.cards) - 1)
         return None
@@ -358,7 +401,6 @@ def _empty_label(stack: E.Stack) -> str:
     if stack.kind == "waste":
         return "◆"
     if stack.kind == "foundation":
-        # Use suit glyph if it's a typed foundation.
         suit = getattr(stack, "suit", None)
         if suit is not None:
             return E.SUIT_GLYPHS[suit]
@@ -368,12 +410,33 @@ def _empty_label(stack: E.Stack) -> str:
     return " "
 
 
-# -------------- side panels --------------
+# -------------- chrome widgets --------------
+
+class TopHUD(Horizontal):
+    """Variant · elapsed time · moves · foundation progress."""
+
+    def compose(self) -> ComposeResult:
+        yield Static("◆ KLONDIKE ◆", id="hud-title")
+        yield Static("TIME 0:00", id="hud-time")
+        yield Static("MOVES 0", id="hud-moves")
+        yield Static("SCORE 0/52", id="hud-score")
+
+    def refresh_hud(self, app: "PysolApp") -> None:
+        g = app.game
+        self.query_one("#hud-title", Static).update(f"◆ {g.name.upper()} ◆")
+        self.query_one("#hud-time", Static).update(f"TIME {app.elapsed_str()}")
+        self.query_one("#hud-moves", Static).update(f"MOVES {g.moves_made}")
+
+        on_fnd = sum(len(f.cards) for f in g.foundations)
+        target = 13 * max(1, len(g.foundations))
+        self.query_one("#hud-score", Static).update(f"SCORE {on_fnd}/{target}")
+
 
 class StatusPanel(Static):
+    """Hidden — kept for test compatibility. Mirrors the holding pill text."""
+
     def __init__(self) -> None:
         super().__init__("", id="status-panel")
-        self.border_title = "Status"
 
     def refresh_status(self, app: "PysolApp") -> None:
         g = app.game
@@ -386,7 +449,6 @@ class StatusPanel(Static):
             f"Moves: {g.moves_made}",
             f"Won:  {'YES' if g.is_won() else 'no'}",
         ]
-        # Show selection
         if tv.selected_sid is not None:
             s = g.stacks[tv.selected_sid]
             n = len(s.cards) - tv.selected_from
@@ -402,38 +464,6 @@ class StatusPanel(Static):
         self.update("\n".join(lines))
 
 
-class LegendPanel(Static):
-    def __init__(self) -> None:
-        super().__init__(_LEGEND_TEXT, id="legend-panel")
-        self.border_title = "Controls"
-
-
-_LEGEND_TEXT = """\
-[b]Navigation[/b]
-  ←/→  next/prev stack
-  ↑/↓  top row ↔ tableau
-  Tab  cycle stacks
-
-[b]Actions[/b]
-  Enter/Space  pick up / drop
-  Esc          cancel selection
-  a            auto-send to foundation
-  s            flip stock → waste
-  u            undo last move
-  n            new game
-  v            variant picker
-
-[b]Mouse[/b]
-  click a card  select that card + any
-                legal group above it
-  click again   drop here (if legal)
-
-[b]Suits[/b]
-  [red]♥[/red] [red]♦[/red]  red
-  ♠ ♣  black
-"""
-
-
 # -------------- app --------------
 
 class PysolApp(App):
@@ -447,6 +477,7 @@ class PysolApp(App):
         Binding("s", "flip_stock", "Stock"),
         Binding("a", "auto_send", "Auto"),
         Binding("v", "variant", "Variant"),
+        Binding("m", "toggle_music", "Music"),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "cancel_select", "Cancel"),
         Binding("space", "activate", "Pick/Drop", show=False),
@@ -458,62 +489,88 @@ class PysolApp(App):
         Binding("tab", "cursor(1)", show=False),
     ]
 
-    def __init__(self, variant: str = "Klondike", seed: int | None = None) -> None:
+    def __init__(self, variant: str = "Klondike", seed: int | None = None,
+                 music: bool = True) -> None:
         super().__init__()
         self._variant = variant
         self._seed = seed
+        self._music_enabled = music
         self.game: E.Game = E.VARIANTS[variant](seed=seed)
         self.tableau: TableauView | None = None  # type: ignore[assignment]
+        self.top_hud: TopHUD | None = None  # type: ignore[assignment]
         self.status_panel: StatusPanel | None = None  # type: ignore[assignment]
+        self.holding_pill: Static | None = None  # type: ignore[assignment]
+        self.context_line: Static | None = None  # type: ignore[assignment]
         self.log_widget: RichLog | None = None  # type: ignore[assignment]
+        # Legacy alias; some tests reach for flash_bar.
         self.flash_bar: Static | None = None  # type: ignore[assignment]
-        # Dogfood-visible cursor state: mirrors tableau.cursor_sid so the
-        # driver's state-hash changes on every arrow keypress.
         self.score: int = 0
+        self._transient_msg: str = ""
+        self._start_time: float = time.monotonic()
+        self.music = MusicPlayer(enabled=self._music_enabled)
 
-    # -- compose --
+    def elapsed_str(self) -> str:
+        elapsed = int(time.monotonic() - self._start_time)
+        m, s = divmod(elapsed, 60)
+        h, m = divmod(m, 60)
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
-        with Horizontal(id="body"):
-            with Vertical(id="tableau-col"):
-                self.tableau = TableauView()
-                self.tableau.border_title = "Tableau"
-                yield self.tableau
-                self.flash_bar = Static("", id="flash-bar")
-                yield self.flash_bar
-                self.log_widget = RichLog(id="log", max_lines=200, markup=True)
-                self.log_widget.border_title = "Log"
-                yield self.log_widget
-            with Vertical(id="side"):
-                self.status_panel = StatusPanel()
-                yield self.status_panel
-                yield LegendPanel()
-        yield Footer()
+        self.top_hud = TopHUD(id="top-hud")
+        yield self.top_hud
+
+        self.tableau = TableauView()
+        yield self.tableau
+
+        self.holding_pill = Static("", id="holding-pill")
+        yield self.holding_pill
+
+        self.context_line = Static("", id="context-line")
+        self.flash_bar = self.context_line
+        yield self.context_line
+
+        # Hidden widgets kept for test compatibility.
+        self.status_panel = StatusPanel()
+        self.status_panel.display = False
+        yield self.status_panel
+
+        self.log_widget = RichLog(id="log", max_lines=200, markup=True)
+        self.log_widget.display = False
+        yield self.log_widget
 
     async def on_mount(self) -> None:
         assert self.tableau is not None
         self.tableau.load_game(self.game)
+        self._start_time = time.monotonic()
+        self.set_interval(1.0, self._tick)
+        self.music.start()
         self.refresh_all()
         self.log_msg(f"Dealt {self.game.name} (seed {self.game.seed})")
 
+    async def on_unmount(self) -> None:
+        self.music.stop()
+
+    def action_toggle_music(self) -> None:
+        playing = self.music.toggle()
+        self.flash("Music on." if playing else "Music off.")
+
+    def _tick(self) -> None:
+        if self.top_hud is not None:
+            self.top_hud.refresh_hud(self)
+
     # -- actions --
     def action_cursor(self, delta: int) -> None:
-        # Priority bindings also fire when modals (e.g. VariantScreen with
-        # ListView) are open. Guard so arrows reach the modal's widgets.
         if len(self.screen_stack) > 1:
             return
         assert self.tableau is not None
         self.tableau.move_cursor(delta)
-        # Keep score in sync so the dogfood driver can detect cursor changes.
         self.score = self.tableau.cursor_sid
         self.refresh_all()
 
     def action_activate(self) -> None:
-        """Pick up from cursor, or drop selection at cursor."""
         assert self.tableau is not None
         tv = self.tableau
         if tv.selected_sid is None:
-            # pick up topmost draggable from cursor stack
             self._try_pickup(tv.cursor_sid, None)
         else:
             self._try_drop(tv.cursor_sid)
@@ -527,29 +584,24 @@ class PysolApp(App):
 
     def action_flip_stock(self) -> None:
         ok = self.game.flip_stock()
-        msg = "Stock flipped." if ok else "No stock to flip."
-        self.log_msg(msg)
+        self.flash("Stock flipped." if ok else "No stock to flip.")
         self.refresh_all()
 
     def action_undo(self) -> None:
-        if self.game.undo():
-            self.log_msg("Undo.")
-        else:
-            self.log_msg("Nothing to undo.")
+        self.flash("Undo." if self.game.undo() else "Nothing to undo.")
         self.refresh_all()
 
     def action_new_game(self) -> None:
         self.game = E.VARIANTS[self._variant]()
         assert self.tableau is not None
         self.tableau.load_game(self.game)
-        self.log_msg(f"New {self._variant} (seed {self.game.seed}).")
+        self._start_time = time.monotonic()
+        self.flash(f"New {self._variant} (seed {self.game.seed}).")
         self.refresh_all()
 
     def action_auto_send(self) -> None:
-        """Try to send every legal card to foundations (one pass)."""
         assert self.tableau is not None
         sent = 0
-        # Try waste, tableau tops, freecells.
         sources: list[E.Stack] = []
         if self.game.waste is not None:
             sources.append(self.game.waste)
@@ -558,14 +610,10 @@ class PysolApp(App):
         for s in sources:
             if self.game.auto_send(s) is not None:
                 sent += 1
-        if sent:
-            self.log_msg(f"Auto-sent {sent} card(s).")
-        else:
-            self.log_msg("Nothing to auto-send.")
+        self.flash(f"Auto-sent {sent} card(s)." if sent else "Nothing to auto-send.")
         self.refresh_all()
 
     def action_variant(self) -> None:
-        """Open a modal variant picker."""
         def _selected(result: str | None) -> None:
             if result and result in E.VARIANTS:
                 self._variant = result
@@ -579,16 +627,13 @@ class PysolApp(App):
     def _try_pickup(self, sid: int, card_idx: int | None) -> None:
         stack = self.game.stacks[sid]
         if stack.kind == "talon":
-            # Tap on talon = flip stock.
             self.action_flip_stock()
             return
         if not stack.cards:
-            self.log_msg("Empty stack — nothing to pick up.")
+            self.flash("Empty stack — nothing to pick up.")
             return
         if card_idx is None:
-            # Default: topmost draggable.
             idx = len(stack.cards) - 1
-            # Walk up to find the deepest draggable start.
             best = idx
             for i in range(idx, -1, -1):
                 if stack.can_drag(i):
@@ -597,13 +642,12 @@ class PysolApp(App):
                     break
             card_idx = best
         if not stack.can_drag(card_idx):
-            self.log_msg("Can't pick up that card.")
+            self.flash("Can't pick up that card.")
             return
         assert self.tableau is not None
         self.tableau.selected_sid = sid
         self.tableau.selected_from = card_idx
-        n = len(stack.cards) - card_idx
-        self.flash(f"Picked up {n} card(s) from #{sid}.")
+        # The holding pill already shows the pickup — no transient flash needed.
 
     def _try_drop(self, dst_sid: int) -> None:
         assert self.tableau is not None
@@ -612,21 +656,21 @@ class PysolApp(App):
         if src_sid is None:
             return
         if src_sid == dst_sid:
-            # Same stack — treat as cancel.
             tv.selected_sid = None
             return
         src = self.game.stacks[src_sid]
         dst = self.game.stacks[dst_sid]
         n = len(src.cards) - tv.selected_from
         if self.game.move(src, dst, n):
-            self.log_msg(f"Moved {n} to #{dst_sid}.")
+            self.flash(f"Moved {n} to #{dst_sid}.")
             tv.selected_sid = None
             if self.game.is_won():
                 self.flash("You won! Press n for a new game.")
-                self.log_msg("[bold yellow]Game won![/bold yellow]")
                 self._celebrate_win()
         else:
-            self.log_msg(f"Illegal move to #{dst_sid}.")
+            # Illegal mouse drop — ring the bell and revert the hold.
+            self.bell()
+            self.flash(f"Illegal move to #{dst_sid}.")
             tv.selected_sid = None
 
     def _celebrate_win(self) -> None:
@@ -635,7 +679,6 @@ class PysolApp(App):
                 self.action_new_game()
         self.push_screen(WinScreen(self.game), _after)
 
-    # -- mouse routing --
     def on_tableau_view_stack_activated(self, message: TableauView.StackActivated) -> None:
         assert self.tableau is not None
         tv = self.tableau
@@ -651,16 +694,78 @@ class PysolApp(App):
             self.log_widget.write(msg)
 
     def flash(self, msg: str) -> None:
-        if self.flash_bar is not None:
-            self.flash_bar.update(msg)
+        self._transient_msg = msg
         self.log_msg(msg)
+
+    def _update_holding_pill(self) -> None:
+        if self.holding_pill is None or self.tableau is None:
+            return
+        tv = self.tableau
+        if tv.selected_sid is None:
+            self.holding_pill.update("")
+            self.holding_pill.display = False
+            return
+        s = self.game.stacks[tv.selected_sid]
+        n = len(s.cards) - tv.selected_from
+        card = s.cards[tv.selected_from]
+        face = f"{card.rank_label}{card.glyph}" if card.face_up else "▒"
+        suffix = f"  +{n - 1}" if n > 1 else ""
+        self.holding_pill.update(f"HELD  {face} from #{s.sid}{suffix}")
+        self.holding_pill.display = True
+
+    def _update_context_line(self) -> None:
+        if self.context_line is None or self.tableau is None:
+            return
+        if self._transient_msg:
+            self.context_line.update(self._transient_msg)
+            self._transient_msg = ""
+            return
+        tv = self.tableau
+        cur = self.game.stacks[tv.cursor_sid]
+        if tv.selected_sid is None:
+            if cur.cards and cur.cards[-1].face_up:
+                c = cur.cards[-1]
+                self.context_line.update(
+                    f"Enter: pick up {c.rank_label}{c.glyph} from #{cur.sid}   ·   ? Help   ·   n New   ·   u Undo"
+                )
+            else:
+                self.context_line.update(
+                    "← → Select   ·   Enter Pick/Drop   ·   s Stock   ·   ? Help"
+                )
+        else:
+            src = self.game.stacks[tv.selected_sid]
+            held = src.cards[tv.selected_from]
+            held_face = f"{held.rank_label}{held.glyph}"
+            if tv.cursor_sid == tv.selected_sid:
+                self.context_line.update(
+                    f"Enter / Esc: cancel {held_face}   ·   ← → cycle legal drops"
+                )
+                return
+            target = f"#{cur.sid}" if not cur.cards else (
+                f"{cur.cards[-1].rank_label}{cur.cards[-1].glyph} (#{cur.sid})"
+                if cur.cards[-1].face_up else f"#{cur.sid}"
+            )
+            self.context_line.update(
+                f"Enter: drop {held_face} on {target}   ·   Esc Cancel"
+            )
 
     def refresh_all(self) -> None:
         if self.tableau is not None:
             self.tableau.refresh()
+        if self.top_hud is not None:
+            self.top_hud.refresh_hud(self)
         if self.status_panel is not None:
             self.status_panel.refresh_status(self)
+        self._update_holding_pill()
+        self._update_context_line()
 
 
-def run(variant: str = "Klondike", seed: int | None = None) -> None:
-    PysolApp(variant=variant, seed=seed).run()
+def run(variant: str = "Klondike", seed: int | None = None,
+        music: bool = True) -> None:
+    app = PysolApp(variant=variant, seed=seed, music=music)
+    try:
+        app.run()
+    finally:
+        # Always kill the loop subprocess on exit — Textual crashes can
+        # otherwise leave paplay running after the terminal returns.
+        app.music.stop()

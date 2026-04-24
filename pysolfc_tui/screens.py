@@ -28,6 +28,7 @@ _HELP_TEXT = """\
   u          Undo last move
   n          Deal a new game of the current variant
   v          Open variant picker
+  m          Toggle background music
   ?          This help screen
   q          Quit
 
@@ -47,6 +48,10 @@ _HELP_TEXT = """\
   Simple Simon        10-col Spider-style, 1 deck, no stock.
   Yukon               Klondike without stock; all rows face-up.
   Golf                Tableau → one waste; rank-adjacent only.
+
+[b yellow]Music credits[/b yellow]
+  [dim]Wallpaper — Kevin MacLeod (incompetech.com), CC-BY 4.0
+  Dewdrop Fantasy — Kevin MacLeod (incompetech.com), CC-BY 4.0[/dim]
 
 [dim]Press any key to close.[/dim]
 """

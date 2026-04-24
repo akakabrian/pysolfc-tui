@@ -307,7 +307,7 @@ SCENARIOS: list[Scenario] = [
 
 
 async def run_scenario(scn: Scenario) -> tuple[str, bool, str]:
-    app = PysolApp(variant=scn.variant, seed=scn.seed)
+    app = PysolApp(variant=scn.variant, seed=scn.seed, music=False)
     try:
         async with app.run_test(size=TERM_SIZE) as pilot:
             await pilot.pause()

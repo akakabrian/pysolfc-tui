@@ -8,3 +8,4 @@ tests/out/*.svg
 .DS_Store
 # Vendor tree (large, upstream)
 /engine/
+.omc/
