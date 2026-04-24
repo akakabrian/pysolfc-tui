@@ -1,8 +1,8 @@
 # DOGFOOD — pysolfc-tui
 
-_Session: 2026-04-23T18:29:51, driver: pilot, duration: 1.5 min_
+_Session: 2026-04-23T22:06:16, driver: pilot, duration: 5.0 min_
 
-**PASS** — ran for 1.2m, captured 10 snap(s), 4 milestone(s), 0 blocker(s), 0 major(s).
+**PASS** — ran for 1.3m, captured 10 snap(s), 4 milestone(s), 0 blocker(s), 0 major(s).
 
 ## Summary
 
@@ -37,8 +37,8 @@ _None._
 - State samples: 26 (unique: 4)
 - Score samples: 26
 - Milestones captured: 4
-- Phase durations (s): A=19.1, B=41.6, C=9.0
-- Snapshots: `/tmp/tui-dogfood-shadow/reports/snaps/pysolfc-tui-20260423-182841`
+- Phase durations (s): A=16.4, B=31.2, C=30.0
+- Snapshots: `/home/brian/AI/projects/tui-dogfood/reports/snaps/pysolfc-tui-20260423-220458`
 
 Unique keys exercised: /, 3, :, ?, H, R, c, down, enter, escape, h, left, n, p, question_mark, r, right, shift+slash, space, up, w, z
 
@@ -57,7 +57,7 @@ Unique keys exercised: /, 3, :, ?, H, R, c, down, enter, escape, h, left, n, p, 
 
 | Event | t (s) | Interest | File | Note |
 |---|---|---|---|---|
-| first_input | 0.4 | 9005.2 | `pysolfc-tui-20260423-182841/milestones/first_input.svg` | key=right |
-| first_score_gain | 2.0 | 9308.0 | `pysolfc-tui-20260423-182841/milestones/first_score_gain.svg` | 0 → 7 |
-| new_modal | 43.8 | 7246.0 | `pysolfc-tui-20260423-182841/milestones/new_modal-05.svg` | Screen → HelpScreen |
-| high_density | 54.8 | 10310.1 | `pysolfc-tui-20260423-182841/milestones/high_density.svg` | interest=10310.1 |
+| first_input | 0.3 | 6738.6 | `pysolfc-tui-20260423-220458/milestones/first_input.svg` | key=right |
+| first_score_gain | 1.7 | 7608.8 | `pysolfc-tui-20260423-220458/milestones/first_score_gain.svg` | 0 → 7 |
+| high_density | 8.2 | 7608.8 | `pysolfc-tui-20260423-220458/milestones/high_density.svg` | interest=7608.8 |
+| new_modal | 33.9 | 7722.8 | `pysolfc-tui-20260423-220458/milestones/new_modal-04.svg` | Screen → HelpScreen |

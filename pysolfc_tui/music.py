@@ -11,12 +11,44 @@ Format note: MP3 only. macOS `afplay` does not decode OGG; Linux
 
 from __future__ import annotations
 
+import atexit
+import ctypes
 import os
 import random
 import shutil
 import signal
 import subprocess
+import sys
 from pathlib import Path
+
+
+_ACTIVE: list["MusicPlayer"] = []
+
+
+def _install_parent_death_trap() -> None:
+    """On Linux, ask the kernel to SIGTERM us when the parent Python dies.
+
+    Ensures the bash loop + paplay subprocess die whenever the Textual
+    app exits — even on SIGKILL, terminal-window close, crash. macOS
+    has no direct equivalent; we fall back to atexit + on_unmount.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        # PR_SET_PDEATHSIG = 1; signal.SIGTERM propagates cleanly.
+        libc.prctl(1, signal.SIGTERM)
+    except (OSError, AttributeError):
+        pass
+
+
+@atexit.register
+def _kill_all_players() -> None:
+    for p in list(_ACTIVE):
+        try:
+            p.stop()
+        except Exception:
+            pass
 
 MUSIC_DIR = Path(__file__).resolve().parent / "assets" / "music"
 
@@ -63,7 +95,10 @@ class MusicPlayer:
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
+                preexec_fn=_install_parent_death_trap,
             )
+            if self not in _ACTIVE:
+                _ACTIVE.append(self)
         except (OSError, FileNotFoundError):
             self.enabled = False
 
@@ -82,6 +117,8 @@ class MusicPlayer:
             except (ProcessLookupError, PermissionError):
                 pass
         self._proc = None
+        if self in _ACTIVE:
+            _ACTIVE.remove(self)
 
     @property
     def is_playing(self) -> bool:

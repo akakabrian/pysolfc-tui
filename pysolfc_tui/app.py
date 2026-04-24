@@ -68,6 +68,7 @@ class TableauView(ScrollView):
         self._canvas_h = 10
         self._col_w = R.CARD_W + MIN_COL_GAP
         self._x_offset = 1
+        self._last_vp_w: int | None = None
 
     def load_game(self, game: E.Game) -> None:
         self.game = game
@@ -133,6 +134,13 @@ class TableauView(ScrollView):
     def on_resize(self, event: events.Resize) -> None:
         if self.game is None:
             return
+        # Height-only changes (holding pill showing/hiding, scrollbar
+        # flicker) shouldn't shift the column layout — the horizontal
+        # metrics only depend on width.
+        new_w = self.size.width
+        if new_w == self._last_vp_w:
+            return
+        self._last_vp_w = new_w
         self._layout_slots()
         self.virtual_size = Size(self._canvas_w, self._canvas_h)
         self.refresh()
