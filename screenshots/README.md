@@ -5,3 +5,7 @@
 ## Gameplay
 
 ![gameplay](gameplay.svg)
+
+## Endscreen
+
+![endscreen](endscreen.svg)
