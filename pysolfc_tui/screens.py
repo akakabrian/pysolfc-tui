@@ -139,36 +139,62 @@ class WinScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
     WinScreen {
         align: center middle;
+        background: #07190f 70%;
     }
     #win-box {
-        width: 50%;
-        max-width: 50;
+        width: 60;
         height: auto;
-        border: heavy rgb(255,220,120);
-        background: rgb(28,40,22);
-        padding: 2 3;
+        border: heavy #ffd45a;
+        background: #07190f;
+        padding: 1 3;
     }
-    #win-title {
+    #win-banner {
         text-align: center;
-        color: rgb(255,220,120);
+        color: #ffd45a;
         text-style: bold;
+    }
+    #win-body {
+        text-align: center;
+        color: #efe8d1;
+        margin-top: 1;
+    }
+    #win-stats {
+        text-align: center;
+        color: #8faa83;
+        margin-top: 1;
+    }
+    #win-foot {
+        text-align: center;
+        color: #8faa83;
+        margin-top: 1;
     }
     """
 
-    def __init__(self, game: E.Game) -> None:
+    def __init__(self, game: E.Game, elapsed: str = "") -> None:
         super().__init__()
         self._game = game
+        self._elapsed = elapsed
 
     def compose(self) -> ComposeResult:
-        stars = "✦  ✦  ✦  ✦  ✦"
-        body = (
-            f"{stars}\n\n"
-            f"[b]YOU WON {self._game.name}![/b]\n\n"
-            f"Moves: {self._game.moves_made}\n"
-            f"Seed:  {self._game.seed}\n\n"
-            f"{stars}\n\n"
-            f"[dim]enter / n — new game\n"
-            f"esc — dismiss[/dim]"
+        banner = "\n".join([
+            " ✦   ✦   ✦   ✦   ✦   ✦   ✦   ✦ ",
+            " ╔══════════════════════════╗ ",
+            " ║    Y O U   W O N ! !     ║ ",
+            " ╚══════════════════════════╝ ",
+            " ✦   ✦   ✦   ✦   ✦   ✦   ✦   ✦ ",
+        ])
+        on_fnd = sum(len(f.cards) for f in self._game.foundations)
+        target = 13 * max(1, len(self._game.foundations))
+        stats = (
+            f"[b]{self._game.name}[/b]\n"
+            f"Time:   {self._elapsed or '—'}\n"
+            f"Moves:  {self._game.moves_made}\n"
+            f"Score:  {on_fnd}/{target}\n"
+            f"Seed:   {self._game.seed}"
         )
         with Vertical(id="win-box"):
-            yield Static(body, id="win-title")
+            yield Static(banner, id="win-banner")
+            yield Static("♥  ♦  ♣  ♠", id="win-body")
+            yield Static(stats, id="win-stats")
+            yield Static("[dim]Enter / n — play again   ·   Esc — dismiss[/dim]",
+                         id="win-foot")

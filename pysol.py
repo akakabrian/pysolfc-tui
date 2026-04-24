@@ -18,8 +18,10 @@ def main() -> None:
     p.add_argument("--music", dest="music", action="store_true",
                    help="Start background music on launch (toggle in-app with `m`). "
                         "Off by default until the subprocess-cleanup path is fully wired.")
+    p.add_argument("--no-sound", dest="sound", action="store_false",
+                   help="Disable sound effects (deal / win). On by default.")
     args = p.parse_args()
-    run(variant=args.variant, seed=args.seed, music=args.music)
+    run(variant=args.variant, seed=args.seed, music=args.music, sound=args.sound)
 
 
 if __name__ == "__main__":

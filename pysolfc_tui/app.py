@@ -37,6 +37,7 @@ from . import engine as E
 from . import render as R
 from .music import MusicPlayer
 from .screens import HelpScreen, VariantScreen, WinScreen
+from .sounds import SoundBoard
 
 MIN_COL_GAP = 2
 MAX_COL_GAP = 8
@@ -521,7 +522,7 @@ class PysolApp(App):
     ]
 
     def __init__(self, variant: str = "Klondike", seed: int | None = None,
-                 music: bool = False) -> None:
+                 music: bool = False, sound: bool = True) -> None:
         super().__init__()
         self._variant = variant
         self._seed = seed
@@ -539,6 +540,7 @@ class PysolApp(App):
         self._transient_msg: str = ""
         self._start_time: float = time.monotonic()
         self.music = MusicPlayer(enabled=self._music_enabled)
+        self.sounds = SoundBoard(enabled=sound)
 
     def elapsed_str(self) -> str:
         elapsed = int(time.monotonic() - self._start_time)
@@ -575,6 +577,7 @@ class PysolApp(App):
         self._start_time = time.monotonic()
         self.set_interval(1.0, self._tick)
         self.music.start()
+        self.sounds.play("dealwaste.wav")
         self.refresh_all()
         self.log_msg(f"Dealt {self.game.name} (seed {self.game.seed})")
 
@@ -632,6 +635,7 @@ class PysolApp(App):
         assert self.tableau is not None
         self.tableau.load_game(self.game)
         self._start_time = time.monotonic()
+        self.sounds.play("dealwaste.wav")
         self.flash(f"New {self._variant} (seed {self.game.seed}).")
         self.refresh_all()
 
@@ -711,10 +715,12 @@ class PysolApp(App):
             tv.selected_sid = None
 
     def _celebrate_win(self) -> None:
+        self.sounds.play("winwon.wav")
+        elapsed = self.elapsed_str()
         def _after(want_new: bool | None) -> None:
             if want_new:
                 self.action_new_game()
-        self.push_screen(WinScreen(self.game), _after)
+        self.push_screen(WinScreen(self.game, elapsed=elapsed), _after)
 
     def on_tableau_view_stack_activated(self, message: TableauView.StackActivated) -> None:
         assert self.tableau is not None
@@ -808,8 +814,8 @@ class PysolApp(App):
 
 
 def run(variant: str = "Klondike", seed: int | None = None,
-        music: bool = True) -> None:
-    app = PysolApp(variant=variant, seed=seed, music=music)
+        music: bool = False, sound: bool = True) -> None:
+    app = PysolApp(variant=variant, seed=seed, music=music, sound=sound)
     try:
         app.run()
     finally:
