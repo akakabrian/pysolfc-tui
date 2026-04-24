@@ -36,14 +36,16 @@ from textual.widgets import RichLog, Static
 from . import engine as E
 from . import render as R
 from .music import MusicPlayer
-from .screens import HelpScreen, VariantScreen, WinScreen
+from .rules import rules_for
+from .screens import HelpScreen, RulesScreen, VariantScreen, WinScreen
 from .sounds import SoundBoard
 
 MIN_COL_GAP = 2
 MAX_COL_GAP = 8
 LABEL_H = 1
-TOP_CARD_Y = LABEL_H                                   # cards sit below the label band
-TABLEAU_TOP = LABEL_H + R.CARD_H_TOP + 1               # +1 gap between top row and tableau
+TOP_CARD_Y = LABEL_H                                   # cards sit below the top banner
+TABLEAU_BANNER_Y = LABEL_H + R.CARD_H_TOP + 1          # banner row between zones
+TABLEAU_TOP = TABLEAU_BANNER_Y + 1                     # tableau starts just below its banner
 
 
 @dataclass
@@ -169,8 +171,8 @@ class TableauView(ScrollView):
         for slot in self.slots:
             self._paint_slot(slot, canvas_y, chars, styles)
 
-        # Label band above the top row + stack-number band at the bottom.
-        self._paint_top_labels(canvas_y, chars, styles)
+        # Section banners above each zone + stack numbers at the bottom.
+        self._paint_section_banners(canvas_y, chars, styles)
         self._paint_stack_numbers(canvas_y, chars, styles)
 
         start = int(scroll_x)
@@ -207,26 +209,64 @@ class TableauView(ScrollView):
             label = f"#{slot.col + 1}".center(R.CARD_W)
             self._write_at(slot.x, label, style, chars, styles)
 
-    def _paint_top_labels(self, canvas_y: int,
-                          chars: list[str], styles: list[Style | None]) -> None:
-        if canvas_y != 0:
+    def _paint_section_banners(self, canvas_y: int,
+                               chars: list[str], styles: list[Style | None]) -> None:
+        """Paint two horizontal banners:
+          y=0:                DRAW | FOUNDATIONS with counts
+          y=TABLEAU_BANNER_Y: <VARIANT NAME>
+        """
+        if canvas_y != 0 and canvas_y != TABLEAU_BANNER_Y:
             return
-        style = Style.parse(f"bold {R.COL_EMPTY} on {R.COL_BG_DARK}")
         assert self.game is not None
-        for slot in self.slots:
-            if slot.row != 0:
-                continue
-            stack = self.game.stacks[slot.sid]
-            label = self._label_for_top_stack(stack)
-            text = label.center(R.CARD_W)
-            self._write_at(slot.x, text, style, chars, styles)
+        rule_style = Style.parse(f"{R.COL_EMPTY} on {R.COL_BG_DARK}")
+        label_style = Style.parse(f"bold {R.COL_SELECT} on {R.COL_BG_DARK}")
+        width = self._canvas_w
+        line = list("╌" * width)
 
-    def _label_for_top_stack(self, stack: E.Stack) -> str:
-        # Only the stock count is worth a text label — waste/foundations
-        # already carry their suit glyph on the card itself.
-        if stack.kind == "talon":
-            return f"STOCK {len(stack.cards)}"
-        return ""
+        def stamp(x: int, text: str, st: Style) -> None:
+            for i, ch in enumerate(text):
+                xi = x + i
+                if 0 <= xi < width:
+                    line[xi] = ch
+                    styles[xi] = st
+
+        if canvas_y == 0:
+            # DRAW + count over stock/waste; FOUNDATIONS + score over foundation slots.
+            for i, ch in enumerate(line):
+                chars[i] = ch
+                styles[i] = rule_style
+
+            stock_n = len(self.game.talon.cards) if self.game.talon is not None else 0
+            on_fnd = sum(len(f.cards) for f in self.game.foundations)
+            target = 13 * max(1, len(self.game.foundations))
+
+            # Find x of leftmost top-row slot + leftmost foundation slot.
+            top_slots = sorted([s for s in self.slots if s.row == 0], key=lambda s: s.col)
+            if top_slots:
+                draw_label = f" DRAW  ·  STOCK {stock_n} "
+                stamp(top_slots[0].x, draw_label, label_style)
+            foundation_slots = [s for s in self.slots
+                                if s.row == 0
+                                and self.game.stacks[s.sid].kind == "foundation"]
+            if foundation_slots:
+                fnd_label = f" FOUNDATIONS {on_fnd}/{target} "
+                stamp(foundation_slots[0].x, fnd_label, label_style)
+            # Write buffered line back into chars.
+            for i, ch in enumerate(line):
+                chars[i] = ch
+            return
+
+        # canvas_y == TABLEAU_BANNER_Y
+        for i, ch in enumerate(line):
+            chars[i] = ch
+            styles[i] = rule_style
+        title = f" {self.game.name.upper()} "
+        # Left-align at the tableau's leftmost slot x, so it aligns with the playfield.
+        tab_slots = sorted([s for s in self.slots if s.row == 1], key=lambda s: s.col)
+        x0 = tab_slots[0].x if tab_slots else 2
+        stamp(x0, title, label_style)
+        for i, ch in enumerate(line):
+            chars[i] = ch
 
     def _paint_slot(self, slot: StackSlot, canvas_y: int,
                     chars: list[str], styles: list[Style | None]) -> None:
@@ -510,6 +550,7 @@ class PysolApp(App):
         Binding("a", "auto_send", "Auto"),
         Binding("v", "variant", "Variant"),
         Binding("m", "toggle_music", "Music"),
+        Binding("r", "rules", "Rules"),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "cancel_select", "Cancel"),
         Binding("space", "activate", "Pick/Drop", show=False),
@@ -663,6 +704,9 @@ class PysolApp(App):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_rules(self) -> None:
+        self.push_screen(RulesScreen(self.game.name, rules_for(self.game.name)))
 
     # -- pick / drop --
     def _try_pickup(self, sid: int, card_idx: int | None) -> None:
