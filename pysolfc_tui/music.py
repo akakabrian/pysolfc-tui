@@ -88,7 +88,15 @@ class MusicPlayer:
         track = random.choice(self.tracks)
         try:
             player_cmd = " ".join(self._player or [])
-            loop_cmd = f'while true; do {player_cmd} "{track}" >/dev/null 2>&1; done'
+            # Signal-trapped loop: when bash receives SIGTERM/SIGINT/SIGHUP
+            # (either from Python's stop(), from PR_SET_PDEATHSIG after the
+            # parent dies, or from the terminal), it kills the backgrounded
+            # paplay child *before* exiting — otherwise paplay would orphan
+            # to init and keep playing after the terminal window closed.
+            loop_cmd = (
+                f'trap \'kill -TERM $(jobs -p) 2>/dev/null; exit 0\' TERM INT HUP; '
+                f'while true; do {player_cmd} "{track}" >/dev/null 2>&1 & wait $!; done'
+            )
             self._proc = subprocess.Popen(
                 ["bash", "-c", loop_cmd],
                 stdout=subprocess.DEVNULL,

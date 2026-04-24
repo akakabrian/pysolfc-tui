@@ -72,6 +72,9 @@ class TableauView(ScrollView):
 
     def load_game(self, game: E.Game) -> None:
         self.game = game
+        # Reset the once-only layout lock so a new game (or the first
+        # mount) relayouts at the current viewport width.
+        self._last_vp_w = None
         self._layout_slots()
         self.virtual_size = Size(self._canvas_w, self._canvas_h)
         self.cursor_sid = self.slots[0].sid if self.slots else 0
@@ -134,11 +137,15 @@ class TableauView(ScrollView):
     def on_resize(self, event: events.Resize) -> None:
         if self.game is None:
             return
-        # Height-only changes (holding pill showing/hiding, scrollbar
-        # flicker) shouldn't shift the column layout — the horizontal
-        # metrics only depend on width.
+        # Lay out exactly once — the first real resize after mount. Any
+        # later reflow (pill showing/hiding, scrollbar flicker, even a
+        # genuine terminal resize) would otherwise jitter the columns.
+        # A new game (`n`) or variant switch (`v`) re-runs load_game()
+        # which resets _last_vp_w and re-layouts at the current width.
+        if self._last_vp_w is not None:
+            return
         new_w = self.size.width
-        if new_w == self._last_vp_w:
+        if new_w <= 0:
             return
         self._last_vp_w = new_w
         self._layout_slots()
