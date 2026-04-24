@@ -598,11 +598,16 @@ class PysolApp(App):
         self.refresh_all()
 
     def action_flip_stock(self) -> None:
+        if self.tableau is not None:
+            self.tableau.selected_sid = None
         ok = self.game.flip_stock()
         self.flash("Stock flipped." if ok else "No stock to flip.")
         self.refresh_all()
 
     def action_undo(self) -> None:
+        # Any stack mutation invalidates a pending selection.
+        if self.tableau is not None:
+            self.tableau.selected_sid = None
         self.flash("Undo." if self.game.undo() else "Nothing to undo.")
         self.refresh_all()
 
@@ -616,6 +621,7 @@ class PysolApp(App):
 
     def action_auto_send(self) -> None:
         assert self.tableau is not None
+        self.tableau.selected_sid = None
         sent = 0
         sources: list[E.Stack] = []
         if self.game.waste is not None:
@@ -722,6 +728,12 @@ class PysolApp(App):
             self.holding_pill.update("")
             return
         s = self.game.stacks[tv.selected_sid]
+        if tv.selected_from >= len(s.cards):
+            # Stack mutated out from under the selection (undo, auto-send
+            # reparenting, etc.). Drop the stale hold.
+            tv.selected_sid = None
+            self.holding_pill.update("")
+            return
         n = len(s.cards) - tv.selected_from
         card = s.cards[tv.selected_from]
         face = f"{card.rank_label}{card.glyph}" if card.face_up else "▒"
@@ -749,6 +761,10 @@ class PysolApp(App):
                 )
         else:
             src = self.game.stacks[tv.selected_sid]
+            if tv.selected_from >= len(src.cards):
+                tv.selected_sid = None
+                self.context_line.update("")
+                return
             held = src.cards[tv.selected_from]
             held_face = f"{held.rank_label}{held.glyph}"
             if tv.cursor_sid == tv.selected_sid:
