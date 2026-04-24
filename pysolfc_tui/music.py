@@ -50,6 +50,41 @@ def _kill_all_players() -> None:
         except Exception:
             pass
 
+
+# Unique string that only our bash loop would contain — lets us find
+# orphaned subprocesses from earlier crashes or concurrent instances.
+_SIGNATURE = "pysolfc_tui/assets/music/"
+
+
+def _cleanup_orphans() -> None:
+    """Kill any prior pysolfc music bash loops + their paplay/afplay
+    children. Safe to call multiple times; silently no-ops if nothing
+    matches. Runs before every `start()` so a second launch doesn't
+    stack audio on top of a first."""
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-af", _SIGNATURE],
+            stderr=subprocess.DEVNULL,
+        ).decode()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return
+    import re
+    my_pid = os.getpid()
+    for line in out.splitlines():
+        m = re.match(r"^(\d+)\s+", line)
+        if not m:
+            continue
+        pid = int(m.group(1))
+        if pid == my_pid:
+            continue
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+
 MUSIC_DIR = Path(__file__).resolve().parent / "assets" / "music"
 
 # Tracks assigned to pysolfc in the tui-music manifest (puzzle_relaxed bucket).
@@ -85,6 +120,10 @@ class MusicPlayer:
     def start(self) -> None:
         if not self.enabled or self._proc is not None or not self.tracks:
             return
+        # Kill any bash loops from prior / concurrent pysolfc instances
+        # before starting our own — otherwise two tracks play over each
+        # other.
+        _cleanup_orphans()
         track = random.choice(self.tracks)
         try:
             player_cmd = " ".join(self._player or [])
