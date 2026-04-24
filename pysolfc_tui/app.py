@@ -233,6 +233,7 @@ class TableauView(ScrollView):
         stack = self.game.stacks[slot.sid]
         sel_from = self._selected_from_for(slot.sid)
         cursor_here = (slot.sid == self.cursor_sid)
+        legal_drop = self._is_legal_drop_for(slot.sid)
         is_top_row = (slot.row == 0)
         card_h = R.CARD_H_TOP if is_top_row else R.CARD_H
 
@@ -240,7 +241,8 @@ class TableauView(ScrollView):
             local_y = canvas_y - slot.y
             if 0 <= local_y < card_h:
                 label = _empty_label(stack)
-                rows = R.empty_slot_rows(label, selected=cursor_here, top=is_top_row)
+                rows = R.empty_slot_rows(label, selected=cursor_here,
+                                         legal_drop=legal_drop, top=is_top_row)
                 text, style = rows[local_y]
                 self._write_at(slot.x, text, style, chars, styles)
             return
@@ -252,9 +254,11 @@ class TableauView(ScrollView):
             card = stack.cards[-1]
             is_sel = (sel_from is not None and (len(stack.cards) - 1) >= sel_from)
             if card.face_up:
-                rows = R.card_face_rows(card, selected=is_sel or cursor_here, top=True)
+                rows = R.card_face_rows(card, selected=is_sel or cursor_here,
+                                        legal_drop=legal_drop, top=True)
             else:
-                rows = R.card_back_rows(selected=is_sel or cursor_here, top=True)
+                rows = R.card_back_rows(selected=is_sel or cursor_here,
+                                        legal_drop=legal_drop, top=True)
             text, style = rows[local_y]
             self._write_at(slot.x, text, style, chars, styles)
             return
@@ -289,11 +293,23 @@ class TableauView(ScrollView):
         is_sel = (sel_from is not None and i_top >= sel_from)
         highlight = cursor_here
         if card.face_up:
-            rows = R.card_face_rows(card, selected=is_sel or highlight)
+            rows = R.card_face_rows(card, selected=is_sel or highlight,
+                                    legal_drop=legal_drop)
         else:
-            rows = R.card_back_rows(selected=is_sel or highlight)
+            rows = R.card_back_rows(selected=is_sel or highlight,
+                                    legal_drop=legal_drop)
         text, style = rows[local]
         self._write_at(slot.x, text, style, chars, styles)
+
+    def _is_legal_drop_for(self, sid: int) -> bool:
+        if self.selected_sid is None or self.selected_sid == sid:
+            return False
+        assert self.game is not None
+        src = self.game.stacks[self.selected_sid]
+        if self.selected_from >= len(src.cards):
+            return False
+        held = src.cards[self.selected_from:]
+        return self.game.stacks[sid].accepts(src, held)
 
     def _write_at(self, x: int, text: str, style: Style,
                   chars: list[str], styles: list[Style | None]) -> None:

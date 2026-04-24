@@ -34,6 +34,10 @@ COL_BLACK = "rgb(17,33,23)"
 COL_BORDER = "rgb(40,35,30)"
 COL_EMPTY = "rgb(85,117,79)"
 COL_SELECT = "rgb(255,212,90)"
+COL_LEGAL = "rgb(130,220,140)"          # glow for legal drop targets
+COL_LEGAL_FILL = "rgb(18,45,22)"        # subtle inner wash so it reads as active
+COL_HINT_RED = "rgb(230,110,110)"       # bright empty-foundation suit
+COL_HINT_BLACK = "rgb(210,210,200)"     # bright empty-foundation suit (clubs/spades)
 COL_HIGHLIGHT = "rgb(100,200,120)"
 COL_CURSOR = "rgb(120,220,255)"
 
@@ -76,11 +80,19 @@ _BACK_SPRITE_TABLEAU = (
 )
 
 
-def card_face_rows(card: Card, selected: bool = False,
+def _pick_border_color(selected: bool, legal_drop: bool,
+                       default: str) -> str:
+    if selected:
+        return COL_SELECT
+    if legal_drop:
+        return COL_LEGAL
+    return default
+
+
+def card_face_rows(card: Card, selected: bool = False, legal_drop: bool = False,
                    top: bool = False) -> list[tuple[str, Style]]:
-    # `top` retained for API compatibility; sizing is uniform now.
     del top
-    bcolor = COL_SELECT if selected else COL_BORDER
+    bcolor = _pick_border_color(selected, legal_drop, COL_BORDER)
     border_style = Style.parse(f"bold {bcolor} on {COL_CARD_BG}")
     suit_style = STYLE_CARD_RED if card.is_red else STYLE_CARD_BLACK
     s = _face_sprite_tableau(card)
@@ -94,10 +106,10 @@ def card_face_rows(card: Card, selected: bool = False,
     ]
 
 
-def card_back_rows(selected: bool = False,
+def card_back_rows(selected: bool = False, legal_drop: bool = False,
                    top: bool = False) -> list[tuple[str, Style]]:
     del top
-    bcolor = COL_SELECT if selected else COL_CARD_BACK
+    bcolor = _pick_border_color(selected, legal_drop, COL_CARD_BACK)
     border_style = Style.parse(f"bold {bcolor} on {COL_BACK_FILL}")
     body_style = Style.parse(f"{COL_CARD_BACK} on {COL_BACK_FILL}")
     rows: list[tuple[str, Style]] = []
@@ -107,18 +119,32 @@ def card_back_rows(selected: bool = False,
     return rows
 
 
+_SUIT_HINT_COLOR = {
+    "♥": COL_HINT_RED,
+    "♦": COL_HINT_RED,
+    "♣": COL_HINT_BLACK,
+    "♠": COL_HINT_BLACK,
+}
+
+
 def empty_slot_rows(label: str = "", selected: bool = False,
+                    legal_drop: bool = False,
                     top: bool = False) -> list[tuple[str, Style]]:
     del top
-    bcolor = COL_SELECT if selected else COL_EMPTY
-    border_style = Style.parse(f"{bcolor} on {COL_BG_DARK}")
+    bcolor = _pick_border_color(selected, legal_drop, COL_EMPTY)
+    bg = COL_LEGAL_FILL if legal_drop else COL_BG_DARK
+    border_style = Style.parse(f"{bcolor} on {bg}")
     ch = (label[:1] if label else " ")
+    # Brighten the glyph row so foundation suits + special placeholders
+    # actually read on dark felt.
+    glyph_color = _SUIT_HINT_COLOR.get(ch, COL_HINT_BLACK if ch in ("▶", "◆", "★", "·") else COL_EMPTY)
+    glyph_style = Style.parse(f"bold {glyph_color} on {bg}")
     middle = ch.center(8)
     return [
         ("┌╌╌╌╌╌╌╌╌┐", border_style),
         ("╎        ╎", border_style),
         ("╎        ╎", border_style),
-        (f"╎{middle}╎", border_style),
+        (f"╎{middle}╎", glyph_style),
         ("╎        ╎", border_style),
         ("└╌╌╌╌╌╌╌╌┘", border_style),
     ]
